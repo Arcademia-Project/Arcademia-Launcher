@@ -632,12 +632,12 @@ namespace ArcademiaGameLauncher.Utils
 
             Exit = _playerControls["Exit"]?[_index]?.ToString() ?? "ESCAPE";
             Start = _playerControls["Start"]?[_index]?.ToString() ?? "RETURN";
-            A = _playerControls["A"]?[_index]?.ToString() ?? "LCONTROL";
-            B = _playerControls["B"]?[_index]?.ToString() ?? "LSHIFT";
-            C = _playerControls["C"]?[_index]?.ToString() ?? "Z";
-            D = _playerControls["D"]?[_index]?.ToString() ?? "X";
-            E = _playerControls["E"]?[_index]?.ToString() ?? "C";
-            F = _playerControls["F"]?[_index]?.ToString() ?? "V";
+            A = _playerControls["A"]?[_index]?.ToString() ?? "Z";
+            B = _playerControls["B"]?[_index]?.ToString() ?? "X";
+            C = _playerControls["C"]?[_index]?.ToString() ?? "C";
+            D = _playerControls["D"]?[_index]?.ToString() ?? "V";
+            E = _playerControls["E"]?[_index]?.ToString() ?? "B";
+            F = _playerControls["F"]?[_index]?.ToString() ?? "N";
         }
     }
 }
