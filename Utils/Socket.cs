@@ -15,6 +15,7 @@ namespace ArcademiaGameLauncher.Utils
         private readonly MainWindow _mainWindow;
         private readonly ISfxPlayer _sfxPlayer;
         private readonly ISessionTrackingService _sessionTracking;
+        private readonly IClaimCoordinator _claims;
         private readonly HubConnection _hub;
         private readonly CancellationTokenSource _heartbeatCts = new();
         private readonly ILogger<Socket> _logger;
@@ -30,12 +31,14 @@ namespace ArcademiaGameLauncher.Utils
             MainWindow mainWindow,
             ISfxPlayer sfxPlayer,
             ISessionTrackingService sessionTracking,
+            IClaimCoordinator claims,
             ILogger<Socket> logger
         )
         {
             _mainWindow = mainWindow;
             _sfxPlayer = sfxPlayer;
             _sessionTracking = sessionTracking;
+            _claims = claims;
             _logger = logger;
 
             var creds = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{authUser}:{authPass}"));
@@ -236,6 +239,15 @@ namespace ArcademiaGameLauncher.Utils
                 {
                     _logger.LogInformation("[SignalR] Received PlaySFX: {FileUrl}", fileUrl);
                     await _sfxPlayer.PlayAsync(fileUrl);
+                }
+            );
+
+            _hub.On<string>(
+                "ScoreClaimed",
+                scoreId =>
+                {
+                    _logger.LogInformation("[SignalR] Received ScoreClaimed: {ScoreId}", scoreId);
+                    _claims.OnScoreClaimed(scoreId);
                 }
             );
 

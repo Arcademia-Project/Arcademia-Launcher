@@ -15,8 +15,15 @@ namespace ArcademiaGameLauncher.Services
             Func<string, int, string, Task> invokeStart,
             Func<string, string, string, Task> invokeEnd
         );
-        Task StartSessionAsync(int gameAssignmentId, DateTime processStartTime);
+        string? CurrentExternalId { get; }
+        event Action SessionEnded;
+        Task StartSessionAsync(
+            string externalId,
+            int gameAssignmentId,
+            DateTime processStartTime
+        );
         Task EndSessionAsync(string endReason);
+        Task<ScoreOutcome> SubmitScoreAsync(ScoreRequest request);
         Task FlushQueueAsync();
         Task RecoverCrashAsync();
     }
@@ -25,20 +32,31 @@ namespace ArcademiaGameLauncher.Services
     {
         private readonly string _queuePath;
         private readonly string _currentPath;
+        private readonly IApiClient _api;
         private readonly ILogger<SessionTrackingService> _logger;
         private readonly SemaphoreSlim _lock = new(1, 1);
 
+        private static readonly TimeSpan SessionStartWait = TimeSpan.FromSeconds(15);
+        private static readonly TimeSpan ScoreSendTimeout = TimeSpan.FromSeconds(10);
+
         private string? _currentExternalId;
+        private TaskCompletionSource<bool>? _startCompletion;
+
+        public string? CurrentExternalId => _currentExternalId;
+
+        public event Action SessionEnded;
         private Func<string, int, string, Task>? _invokeStart;
         private Func<string, string, string, Task>? _invokeEnd;
 
         public SessionTrackingService(
             string applicationPath,
+            IApiClient api,
             ILogger<SessionTrackingService> logger
         )
         {
             _queuePath = Path.Combine(applicationPath, "session_queue.json");
             _currentPath = Path.Combine(applicationPath, "session_current.json");
+            _api = api;
             _logger = logger;
         }
 
@@ -51,35 +69,49 @@ namespace ArcademiaGameLauncher.Services
             _invokeEnd = invokeEnd;
         }
 
-        public async Task StartSessionAsync(int gameAssignmentId, DateTime processStartTime)
+        public async Task StartSessionAsync(
+            string externalId,
+            int gameAssignmentId,
+            DateTime processStartTime
+        )
         {
-            var externalId = Guid.NewGuid().ToString();
+            var startCompletion = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            _startCompletion = startCompletion;
             _currentExternalId = externalId;
 
-            var startedAtUtc =
-                processStartTime.Kind == DateTimeKind.Utc
-                    ? processStartTime
-                    : processStartTime.ToUniversalTime();
+            try
+            {
+                var startedAtUtc =
+                    processStartTime.Kind == DateTimeKind.Utc
+                        ? processStartTime
+                        : processStartTime.ToUniversalTime();
 
-            WriteCurrentFile(externalId, gameAssignmentId, startedAtUtc);
-            _logger.LogInformation(
-                "[Session] Started: {ExternalId} AssignmentId={AssignmentId}",
-                externalId,
-                gameAssignmentId
-            );
-
-            var sent = await TryInvokeStart(externalId, gameAssignmentId, startedAtUtc);
-            if (!sent)
-                await EnqueueAsync(
-                    new SessionQueueItem
-                    {
-                        Type = "Start",
-                        ExternalId = externalId,
-                        GameAssignmentId = gameAssignmentId,
-                        LauncherStartedAtUtc = startedAtUtc.ToString("o"),
-                        QueuedAtUtc = DateTime.UtcNow.ToString("o"),
-                    }
+                WriteCurrentFile(externalId, gameAssignmentId, startedAtUtc);
+                _logger.LogInformation(
+                    "[Session] Started: {ExternalId} AssignmentId={AssignmentId}",
+                    externalId,
+                    gameAssignmentId
                 );
+
+                var sent = await TryInvokeStart(externalId, gameAssignmentId, startedAtUtc);
+                if (!sent)
+                    await EnqueueAsync(
+                        new SessionQueueItem
+                        {
+                            Type = "Start",
+                            ExternalId = externalId,
+                            GameAssignmentId = gameAssignmentId,
+                            LauncherStartedAtUtc = startedAtUtc.ToString("o"),
+                            QueuedAtUtc = DateTime.UtcNow.ToString("o"),
+                        }
+                    );
+            }
+            finally
+            {
+                startCompletion.TrySetResult(true);
+            }
         }
 
         public async Task EndSessionAsync(string endReason)
@@ -90,6 +122,7 @@ namespace ArcademiaGameLauncher.Services
 
             _currentExternalId = null;
             DeleteCurrentFile();
+            SessionEnded?.Invoke();
 
             var endedAt = DateTime.UtcNow;
             _logger.LogInformation(
@@ -110,6 +143,91 @@ namespace ArcademiaGameLauncher.Services
                         QueuedAtUtc = DateTime.UtcNow.ToString("o"),
                     }
                 );
+        }
+
+        public async Task<ScoreOutcome> SubmitScoreAsync(ScoreRequest request)
+        {
+            var sessionId = _currentExternalId;
+            if (sessionId is null)
+                return new ScoreOutcome(
+                    "rejected",
+                    request.ScoreId,
+                    null,
+                    false,
+                    "No game session is active."
+                );
+
+            var startCompletion = _startCompletion;
+            if (startCompletion is not null)
+                await Task.WhenAny(startCompletion.Task, Task.Delay(SessionStartWait));
+
+            var item = new SessionQueueItem
+            {
+                Type = "Score",
+                ExternalId = sessionId,
+                ScoreId = request.ScoreId,
+                BoardSlug = request.BoardSlug,
+                ScoreValue = request.Value,
+                PlayerName = request.PlayerName,
+                MetadataJson = request.MetadataJson,
+                ApiKey = request.ApiKey,
+                AchievedAtUtc = DateTime.UtcNow.ToString("o"),
+                QueuedAtUtc = DateTime.UtcNow.ToString("o"),
+            };
+
+            bool queueEmpty;
+            await _lock.WaitAsync();
+            try
+            {
+                queueEmpty = LoadQueue().Count == 0;
+            }
+            finally
+            {
+                _lock.Release();
+            }
+
+            if (queueEmpty)
+            {
+                using var cts = new CancellationTokenSource(ScoreSendTimeout);
+                var result = await _api.PostLeaderboardScoreAsync(item, cts.Token);
+
+                if (result.Kind == ScorePostKind.Accepted)
+                    return new ScoreOutcome(
+                        "submitted",
+                        result.ScoreId,
+                        result.Rank,
+                        result.Duplicate,
+                        null
+                    );
+
+                if (result.Kind == ScorePostKind.Rejected)
+                {
+                    _logger.LogWarning(
+                        "[Session] Score {ScoreId} rejected: {Message}",
+                        item.ScoreId,
+                        result.Message
+                    );
+                    return new ScoreOutcome(
+                        "rejected",
+                        item.ScoreId,
+                        null,
+                        false,
+                        result.Message
+                    );
+                }
+
+                _logger.LogWarning(
+                    "[Session] Score {ScoreId} could not be sent, queueing: {Message}",
+                    item.ScoreId,
+                    result.Message
+                );
+            }
+
+            await EnqueueAsync(item);
+            if (!queueEmpty)
+                _ = Task.Run(FlushQueueAsync);
+
+            return new ScoreOutcome("queued", item.ScoreId, null, false, null);
         }
 
         public async Task FlushQueueAsync()
@@ -152,6 +270,21 @@ namespace ArcademiaGameLauncher.Services
                         )
                         {
                             await _invokeEnd!(item.ExternalId, item.EndReason, item.EndedAtUtc);
+                            sent = true;
+                        }
+                        else if (item.Type == "Score" && item.ScoreValue.HasValue)
+                        {
+                            using var cts = new CancellationTokenSource(ScoreSendTimeout);
+                            var result = await _api.PostLeaderboardScoreAsync(item, cts.Token);
+                            if (result.Kind == ScorePostKind.Transient)
+                                throw new InvalidOperationException(result.Message);
+
+                            if (result.Kind == ScorePostKind.Rejected)
+                                _logger.LogWarning(
+                                    "[Session] Dropping rejected queued score {ScoreId}: {Message}",
+                                    item.ScoreId,
+                                    result.Message
+                                );
                             sent = true;
                         }
                         else

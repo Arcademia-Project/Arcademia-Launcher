@@ -104,8 +104,11 @@ namespace ArcademiaGameLauncher
                     services.AddSingleton<IDispatcherQueueService, DispatcherQueueService>();
                     services.AddSingleton<ISessionTrackingService>(sp => new SessionTrackingService(
                         applicationPath,
+                        sp.GetRequiredService<IApiClient>(),
                         sp.GetRequiredService<ILogger<SessionTrackingService>>()
                     ));
+                    services.AddSingleton<IClaimCoordinator, ClaimCoordinator>();
+                    services.AddSingleton<ISdkBrokerService, SdkBrokerService>();
 
                     services.AddSingleton<Windows.MainWindow>();
                 })

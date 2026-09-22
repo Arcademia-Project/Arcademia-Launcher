@@ -44,6 +44,20 @@ namespace ArcademiaGameLauncher.Services
         );
 
         Task<byte[]> GetGameThumbnailBytesAsync(int gameId, CancellationToken cancellationToken);
+
+        Task<ScorePostResult> PostLeaderboardScoreAsync(
+            SessionQueueItem item,
+            CancellationToken cancellationToken
+        );
+
+        Task<ClaimPostResult> CreateClaimAsync(
+            string targetScoreId,
+            string sessionId,
+            string apiKey,
+            CancellationToken cancellationToken
+        );
+
+        Task CancelClaimAsync(string code, CancellationToken cancellationToken);
     }
 
     public class ApiClient(HttpClient http) : IApiClient
@@ -308,6 +322,155 @@ namespace ArcademiaGameLauncher.Services
                 return null;
             byte[] bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
             return bytes.Length > 0 ? bytes : null;
+        }
+
+        public async Task<ScorePostResult> PostLeaderboardScoreAsync(
+            SessionQueueItem item,
+            CancellationToken cancellationToken
+        )
+        {
+            JsonElement? metadata = null;
+            if (!string.IsNullOrWhiteSpace(item.MetadataJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(item.MetadataJson);
+                    metadata = doc.RootElement.Clone();
+                }
+                catch (JsonException) { }
+            }
+
+            var payload = new
+            {
+                scoreId = item.ScoreId,
+                sessionId = item.ExternalId,
+                apiKey = item.ApiKey,
+                boardSlug = item.BoardSlug,
+                value = item.ScoreValue,
+                playerName = item.PlayerName,
+                achievedAt = item.AchievedAtUtc,
+                metadata,
+            };
+
+            try
+            {
+                using var response = await _http.PostAsJsonAsync(
+                    "/api/Leaderboards/Machine/Scores",
+                    payload,
+                    cancellationToken
+                );
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    var root = doc.RootElement;
+                    return new ScorePostResult(
+                        ScorePostKind.Accepted,
+                        root.TryGetProperty("scoreId", out var id) ? id.GetString() : item.ScoreId,
+                        root.TryGetProperty("rank", out var rank) && rank.ValueKind == JsonValueKind.Number
+                            ? rank.GetInt64()
+                            : null,
+                        root.TryGetProperty("duplicate", out var dup) && dup.ValueKind == JsonValueKind.True,
+                        null
+                    );
+                }
+
+                var status = (int)response.StatusCode;
+                var message = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body;
+                var transient = status is 401 or 408 or 429 || status >= 500;
+
+                return new ScorePostResult(
+                    transient ? ScorePostKind.Transient : ScorePostKind.Rejected,
+                    item.ScoreId,
+                    null,
+                    false,
+                    message
+                );
+            }
+            catch (Exception ex)
+                when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return new ScorePostResult(
+                    ScorePostKind.Transient,
+                    item.ScoreId,
+                    null,
+                    false,
+                    ex.Message
+                );
+            }
+        }
+
+        public async Task<ClaimPostResult> CreateClaimAsync(
+            string targetScoreId,
+            string sessionId,
+            string apiKey,
+            CancellationToken cancellationToken
+        )
+        {
+            var payload = new
+            {
+                targetScoreId,
+                sessionId,
+                apiKey,
+            };
+
+            try
+            {
+                using var response = await _http.PostAsJsonAsync(
+                    "/api/Leaderboards/Machine/Claims",
+                    payload,
+                    cancellationToken
+                );
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    var root = doc.RootElement;
+                    return new ClaimPostResult(
+                        ClaimPostKind.Accepted,
+                        root.GetProperty("claimUrl").GetString(),
+                        root.GetProperty("expiresAt").GetDateTime().ToUniversalTime(),
+                        null
+                    );
+                }
+
+                var status = (int)response.StatusCode;
+                var message = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body;
+                var transient = status is 401 or 408 or 429 || status >= 500;
+
+                return new ClaimPostResult(
+                    transient ? ClaimPostKind.Transient : ClaimPostKind.Rejected,
+                    null,
+                    default,
+                    message
+                );
+            }
+            catch (Exception ex)
+                when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return new ClaimPostResult(ClaimPostKind.Transient, null, default, ex.Message);
+            }
+        }
+
+        public async Task CancelClaimAsync(string code, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Delete,
+                    "/api/Leaderboards/Machine/Claims"
+                )
+                {
+                    Content = JsonContent.Create(new { code }),
+                };
+                using var response = await _http.SendAsync(request, cancellationToken);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                // Best-effort — the claim will simply expire on its own if this fails.
+            }
         }
     }
 }
