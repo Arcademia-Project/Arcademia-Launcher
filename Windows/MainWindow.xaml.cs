@@ -123,6 +123,8 @@ namespace ArcademiaGameLauncher.Windows
         private GameState[] _gameTitleStates;
 
         private readonly InfoWindow _infoWindow;
+        private readonly ClaimWindow _claimWindow;
+        private bool _isClaimWindowVisible;
         private readonly EmojiParser _emojiParser;
 
         private readonly Socket _socket;
@@ -132,6 +134,8 @@ namespace ArcademiaGameLauncher.Windows
         private readonly IDispatcherQueueService _dispatcherQueue;
         private readonly IApiClient _apiClient;
         private readonly ISessionTrackingService _sessionTracking;
+        private readonly ISdkBrokerService _sdkBroker;
+        private readonly IClaimCoordinator _claimCoordinator;
 
         public MainWindow(
             ILogger<MainWindow> logger,
@@ -140,6 +144,8 @@ namespace ArcademiaGameLauncher.Windows
             IDispatcherQueueService dispatcherQueue,
             IApiClient apiClient,
             ISessionTrackingService sessionTracking,
+            ISdkBrokerService sdkBroker,
+            IClaimCoordinator claimCoordinator,
             JObject config,
             string applicationPath,
             ILoggerFactory loggerFactory
@@ -151,6 +157,8 @@ namespace ArcademiaGameLauncher.Windows
             _dispatcherQueue = dispatcherQueue;
             _apiClient = apiClient;
             _sessionTracking = sessionTracking;
+            _sdkBroker = sdkBroker;
+            _claimCoordinator = claimCoordinator;
             _config = config;
             _applicationPath = applicationPath;
 
@@ -173,6 +181,10 @@ namespace ArcademiaGameLauncher.Windows
 
             // Load the info window
             _infoWindow = new();
+            _claimWindow = new();
+            _claimCoordinator.ClaimShown += ClaimCoordinator_ClaimShown;
+            _claimCoordinator.ClaimTick += ClaimCoordinator_ClaimTick;
+            _claimCoordinator.ClaimHidden += ClaimCoordinator_ClaimHidden;
 
             InitializeComponent();
 
@@ -227,6 +239,7 @@ namespace ArcademiaGameLauncher.Windows
                 this,
                 _sfxPlayer,
                 _sessionTracking,
+                _claimCoordinator,
                 loggerFactory.CreateLogger<Socket>()
             );
             _ = _socket.SafeReportStatus("Idle");
@@ -952,8 +965,23 @@ namespace ArcademiaGameLauncher.Windows
 
                 if (_currentlyRunningProcess == null || _currentlyRunningProcess.HasExited)
                 {
+                    var sdkSessionId = Guid.NewGuid().ToString();
+                    var sdkEnvironment = _sdkBroker.Start(sdkSessionId);
+                    startInfo.Environment[SdkBrokerService.PipeVariable] = sdkEnvironment.PipeName;
+                    startInfo.Environment[SdkBrokerService.NonceVariable] = sdkEnvironment.Nonce;
+                    startInfo.Environment[SdkBrokerService.SessionVariable] =
+                        sdkEnvironment.SessionId;
+
                     // Start new process and poll until its window appears, then focus it
-                    _currentlyRunningProcess = Process.Start(startInfo);
+                    try
+                    {
+                        _currentlyRunningProcess = Process.Start(startInfo);
+                    }
+                    catch
+                    {
+                        _sdkBroker.Stop();
+                        throw;
+                    }
                     StyleStartButtonState(GameState.launching);
 
                     _ = _socket.SafeReportStatus(
@@ -963,6 +991,7 @@ namespace ArcademiaGameLauncher.Windows
 
                     var gameAssignmentId = (int)_gameInfoList[_currentlySelectedGameIndex]["Id"];
                     _ = _sessionTracking.StartSessionAsync(
+                        sdkSessionId,
                         gameAssignmentId,
                         _currentlyRunningProcess?.StartTime ?? DateTime.UtcNow
                     );
@@ -1217,6 +1246,16 @@ namespace ArcademiaGameLauncher.Windows
                     catch { }
                 }
 
+                IntPtr claimHandle = IntPtr.Zero;
+                if (_claimWindow != null)
+                {
+                    try
+                    {
+                        claimHandle = new WindowInteropHelper(_claimWindow).Handle;
+                    }
+                    catch { }
+                }
+
                 IntPtr launcherHandle = IntPtr.Zero;
                 try
                 {
@@ -1224,13 +1263,58 @@ namespace ArcademiaGameLauncher.Windows
                 }
                 catch { }
 
-                if (_isInfoWindowVisible)
+                if (_isClaimWindowVisible)
+                    WindowHelper.SetWindowOrder(claimHandle, gameHandle, launcherHandle);
+                else if (_isInfoWindowVisible)
                     WindowHelper.SetWindowOrder(infoHandle, gameHandle, launcherHandle);
                 else if (gameHandle != IntPtr.Zero)
                     WindowHelper.SetWindowOrder(gameHandle, infoHandle, launcherHandle);
                 else
                     WindowHelper.SetWindowOrder(launcherHandle, infoHandle, IntPtr.Zero);
             });
+        }
+
+        private void UpdateClaimWindowPosition()
+        {
+            Dispatcher?.InvokeAsync(() =>
+            {
+                if (_claimWindow == null)
+                    return;
+
+                double targetWidth = this.ActualWidth;
+                double targetHeight = this.ActualHeight;
+
+                double claimWidth =
+                    _claimWindow.ActualWidth > 0 ? _claimWindow.ActualWidth : _claimWindow.Width;
+                double claimHeight =
+                    _claimWindow.ActualHeight > 0 ? _claimWindow.ActualHeight : _claimWindow.Height;
+
+                if (double.IsNaN(claimWidth))
+                    claimWidth = 1000;
+                if (double.IsNaN(claimHeight))
+                    claimHeight = 600;
+
+                _claimWindow.Left = this.Left + (targetWidth - claimWidth) / 2;
+                _claimWindow.Top = this.Top + (targetHeight - claimHeight) / 2;
+            });
+        }
+
+        private void ClaimCoordinator_ClaimShown(string claimUrl, DateTime expiresAtUtc)
+        {
+            _isClaimWindowVisible = true;
+            UpdateClaimWindowPosition();
+            _claimWindow.ShowWindow(claimUrl);
+            ApplyWindowZOrder();
+        }
+
+        private void ClaimCoordinator_ClaimTick(int millisecondsRemaining) =>
+            _claimWindow.UpdateCountdown(millisecondsRemaining);
+
+        private void ClaimCoordinator_ClaimHidden()
+        {
+            _isClaimWindowVisible = false;
+            _claimWindow.HideWindow();
+            ApplyWindowZOrder();
         }
 
         private void UpdateInfoWindowPosition()
@@ -1262,6 +1346,17 @@ namespace ArcademiaGameLauncher.Windows
 
         private void HandleExitLogic()
         {
+            if (_isClaimWindowVisible)
+            {
+                if (
+                    _controllerManager.GetEitherButtonDownState(
+                        ControllerState.ControllerActions.Exit
+                    )
+                )
+                    _claimCoordinator.CancelActive();
+                return;
+            }
+
             // If a game is running
             if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
             {
@@ -1371,6 +1466,12 @@ namespace ArcademiaGameLauncher.Windows
 
         private void HandleAFKCheck()
         {
+            if (_isClaimWindowVisible)
+            {
+                _afkTimer = 0;
+                return;
+            }
+
             // If the player is AFK for too long
             if (_afkTimer >= _noInputTimeout + 5000)
             {

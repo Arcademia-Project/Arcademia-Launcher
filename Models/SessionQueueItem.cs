@@ -13,6 +13,14 @@ namespace ArcademiaGameLauncher.Models
         public string? EndReason { get; set; }
         public string? EndedAtUtc { get; set; }
 
+        public string ScoreId { get; set; }
+        public string BoardSlug { get; set; }
+        public long? ScoreValue { get; set; }
+        public string PlayerName { get; set; }
+        public string MetadataJson { get; set; }
+        public string ApiKey { get; set; }
+        public string AchievedAtUtc { get; set; }
+
         public string QueuedAtUtc { get; set; } = null!;
         public int AttemptCount { get; set; }
     }

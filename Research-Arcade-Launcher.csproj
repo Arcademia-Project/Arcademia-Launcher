@@ -19,6 +19,7 @@
     <Content Include="Assets\Images\Arcademia_Favicon.ico" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.8.0" />
     <Resource Include="Assets\Images\Arcademia_Favicon.ico">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>

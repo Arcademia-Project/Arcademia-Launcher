@@ -1,0 +1,75 @@
+<Window x:Class="ArcademiaGameLauncher.Windows.ClaimWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:ArcademiaGameLauncher"
+        mc:Ignorable="d"
+        WindowStartupLocation="CenterScreen"
+        WindowState="Normal"
+        ResizeMode="NoResize"
+        Title="ClaimWindow"
+        Height="600"
+        Width="1000"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        Topmost="True">
+
+        <Window.Resources>
+                <Style x:Key="Early GameBoy">
+                        <Setter Property="TextElement.FontFamily"
+                                Value="/Fonts/#Press Start 2P"/>
+                </Style>
+        </Window.Resources>
+
+        <Grid Background="Black"
+              Width="1000"
+              Height="600">
+                <Grid.RowDefinitions>
+                        <RowDefinition Height="2*"/>
+                        <RowDefinition Height="5*"/>
+                        <RowDefinition Height="2*"/>
+                        <RowDefinition Height="2*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock x:Name="TitleText"
+                           Grid.Row="0"
+                           Text="Scan To Save Your Score"
+                           Style="{StaticResource Early GameBoy}"
+                           FontSize="26"
+                           Foreground="White"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center"/>
+
+                <Border Grid.Row="1"
+                        Width="260"
+                        Height="260"
+                        Background="White"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                        <Image x:Name="QrImage"
+                               Width="240"
+                               Height="240"
+                               RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                </Border>
+
+                <TextBlock Grid.Row="2"
+                           Text="Press EXIT To Cancel"
+                           Style="{StaticResource Early GameBoy}"
+                           FontSize="22"
+                           Foreground="White"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center"/>
+
+                <TextBlock x:Name="CountdownText"
+                           Grid.Row="3"
+                           Text="5:00"
+                           Style="{StaticResource Early GameBoy}"
+                           FontSize="40"
+                           Foreground="Red"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center"/>
+        </Grid>
+</Window>
