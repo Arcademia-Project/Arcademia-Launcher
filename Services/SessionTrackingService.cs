@@ -19,7 +19,7 @@ namespace ArcademiaGameLauncher.Services
         event Action SessionEnded;
         Task StartSessionAsync(
             string externalId,
-            int gameAssignmentId,
+            int gameId,
             DateTime processStartTime
         );
         Task EndSessionAsync(string endReason);
@@ -71,7 +71,7 @@ namespace ArcademiaGameLauncher.Services
 
         public async Task StartSessionAsync(
             string externalId,
-            int gameAssignmentId,
+            int gameId,
             DateTime processStartTime
         )
         {
@@ -88,21 +88,21 @@ namespace ArcademiaGameLauncher.Services
                         ? processStartTime
                         : processStartTime.ToUniversalTime();
 
-                WriteCurrentFile(externalId, gameAssignmentId, startedAtUtc);
+                WriteCurrentFile(externalId, gameId, startedAtUtc);
                 _logger.LogInformation(
-                    "[Session] Started: {ExternalId} AssignmentId={AssignmentId}",
+                    "[Session] Started: {ExternalId} GameId={GameId}",
                     externalId,
-                    gameAssignmentId
+                    gameId
                 );
 
-                var sent = await TryInvokeStart(externalId, gameAssignmentId, startedAtUtc);
+                var sent = await TryInvokeStart(externalId, gameId, startedAtUtc);
                 if (!sent)
                     await EnqueueAsync(
                         new SessionQueueItem
                         {
                             Type = "Start",
                             ExternalId = externalId,
-                            GameAssignmentId = gameAssignmentId,
+                            GameId = gameId,
                             LauncherStartedAtUtc = startedAtUtc.ToString("o"),
                             QueuedAtUtc = DateTime.UtcNow.ToString("o"),
                         }
@@ -251,14 +251,14 @@ namespace ArcademiaGameLauncher.Services
                     {
                         if (
                             item.Type == "Start"
-                            && item.GameAssignmentId.HasValue
+                            && item.GameId.HasValue
                             && item.LauncherStartedAtUtc is not null
                         )
                         {
                             var startedAt = DateTime.Parse(item.LauncherStartedAtUtc);
                             await _invokeStart!(
                                 item.ExternalId,
-                                item.GameAssignmentId.Value,
+                                item.GameId.Value,
                                 startedAt.ToString("o")
                             );
                             sent = true;
@@ -383,7 +383,7 @@ namespace ArcademiaGameLauncher.Services
 
         private async Task<bool> TryInvokeStart(
             string externalId,
-            int gameAssignmentId,
+            int gameId,
             DateTime startedAt
         )
         {
@@ -391,7 +391,7 @@ namespace ArcademiaGameLauncher.Services
                 return false;
             try
             {
-                await _invokeStart(externalId, gameAssignmentId, startedAt.ToString("o"));
+                await _invokeStart(externalId, gameId, startedAt.ToString("o"));
                 return true;
             }
             catch (Exception)
@@ -463,7 +463,7 @@ namespace ArcademiaGameLauncher.Services
             }
         }
 
-        private void WriteCurrentFile(string externalId, int gameAssignmentId, DateTime startedAt)
+        private void WriteCurrentFile(string externalId, int gameId, DateTime startedAt)
         {
             try
             {
@@ -471,7 +471,7 @@ namespace ArcademiaGameLauncher.Services
                     new CurrentSessionFile
                     {
                         ExternalId = externalId,
-                        GameAssignmentId = gameAssignmentId,
+                        GameId = gameId,
                         LauncherStartedAtUtc = startedAt.ToString("o"),
                     },
                     Formatting.Indented
@@ -500,7 +500,7 @@ namespace ArcademiaGameLauncher.Services
         private sealed class CurrentSessionFile
         {
             public string ExternalId { get; set; } = null!;
-            public int GameAssignmentId { get; set; }
+            public int GameId { get; set; }
             public string LauncherStartedAtUtc { get; set; } = null!;
         }
     }
