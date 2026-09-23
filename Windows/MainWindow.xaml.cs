@@ -59,6 +59,15 @@ namespace ArcademiaGameLauncher.Windows
         private string _currentStep = "Idle";
         private DateTime _lastSuccessfulTick = DateTime.Now;
 
+        private readonly Stopwatch _frameStopwatch = Stopwatch.StartNew();
+        private long _lastFrameElapsedMs = 0;
+        private const int MaxFrameMs = 250;
+
+        private long _lastUiHeartbeatTicks = DateTime.UtcNow.Ticks;
+        private int _consecutiveUiStalls = 0;
+        private const int UiStallCheckIntervalSeconds = 5;
+        private const int UiStallsBeforeRecovery = 12;
+
         private int _selectionAnimationFrame = 0;
         private readonly int _selectionAnimationFrameRate = 100;
 
@@ -972,10 +981,10 @@ namespace ArcademiaGameLauncher.Windows
                     startInfo.Environment[SdkBrokerService.SessionVariable] =
                         sdkEnvironment.SessionId;
 
-                    // Start new process and poll until its window appears, then focus it
+                    Process startedProcess;
                     try
                     {
-                        _currentlyRunningProcess = Process.Start(startInfo);
+                        _currentlyRunningProcess = startedProcess = Process.Start(startInfo);
                     }
                     catch
                     {
@@ -993,14 +1002,21 @@ namespace ArcademiaGameLauncher.Windows
                     _ = _sessionTracking.StartSessionAsync(
                         sdkSessionId,
                         gameAssignmentId,
-                        _currentlyRunningProcess?.StartTime ?? DateTime.UtcNow
+                        startedProcess?.StartTime ?? DateTime.UtcNow
                     );
 
-                    await FocusGameWindowAsync(_currentlyRunningProcess);
+                    await FocusGameWindowAsync(startedProcess);
+                    ApplyWindowZOrder();
+
+                    if (startedProcess == null || startedProcess.HasExited)
+                    {
+                        SetGameTitleState(_currentlySelectedGameIndex, GameState.ready);
+                        StyleStartButtonState(_currentlySelectedGameIndex);
+                        return;
+                    }
                 }
                 else
                 {
-                    // Game already running — bring it to front immediately
                     try
                     {
                         _currentlyRunningProcess.Refresh();
@@ -1009,6 +1025,7 @@ namespace ArcademiaGameLauncher.Windows
                             WindowHelper.ForceForeground(handle);
                     }
                     catch { }
+                    ApplyWindowZOrder();
                 }
 
                 SetGameTitleState(_currentlySelectedGameIndex, GameState.runningGame);
@@ -1061,10 +1078,9 @@ namespace ArcademiaGameLauncher.Windows
                     if (_logger.IsEnabled(LogLevel.Error))
                         _logger.LogError(tcx, "[First Input] Key_Pressed: Task Canceled");
                 }
-
-                // Set the focus to the game launcher
-                ApplyWindowZOrder();
             }
+
+            ApplyWindowZOrder();
         }
 
         private void ResetControllerStates()
@@ -1089,23 +1105,144 @@ namespace ArcademiaGameLauncher.Windows
             {
                 while (true)
                 {
-                    await Task.Delay(5000); // Check every 5 seconds
+                    await Task.Delay(UiStallCheckIntervalSeconds * 1000);
 
                     var timeSinceLastTick = DateTime.Now - _lastSuccessfulTick;
-
-                    // If the UI hasn't finished a loop in 5 seconds, it's frozen
-                    if (timeSinceLastTick.TotalSeconds > 5)
+                    if (timeSinceLastTick.TotalSeconds > UiStallCheckIntervalSeconds)
                     {
                         _logger.LogError(
-                            "[WATCHDOG] UI THREAD APPEARS FROZEN! "
-                                + "Last Step: {Step}. Time since last tick: {Seconds}s. "
-                                + "Application has likely deadlocked.",
-                            _currentStep,
-                            timeSinceLastTick.TotalSeconds
+                            "[WATCHDOG] Background tick loop hasn't run in {Seconds}s "
+                                + "(last step: {Step}). The tick loop runs on the thread pool, "
+                                + "so this alone doesn't prove the UI is frozen.",
+                            timeSinceLastTick.TotalSeconds,
+                            _currentStep
                         );
+                    }
+
+                    bool uiResponded = false;
+                    try
+                    {
+                        var dispatcher = Application.Current?.Dispatcher;
+                        if (dispatcher != null)
+                        {
+                            var pingTask = dispatcher
+                                .InvokeAsync(
+                                    () =>
+                                        Interlocked.Exchange(
+                                            ref _lastUiHeartbeatTicks,
+                                            DateTime.UtcNow.Ticks
+                                        ),
+                                    System.Windows.Threading.DispatcherPriority.Send
+                                )
+                                .Task;
+                            var winner = await Task.WhenAny(
+                                pingTask,
+                                Task.Delay(UiStallCheckIntervalSeconds * 1000 - 1000)
+                            );
+                            uiResponded = winner == pingTask;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "[WATCHDOG] Failed to probe UI dispatcher");
+                    }
+
+                    if (!uiResponded)
+                    {
+                        _consecutiveUiStalls++;
+                        LogFreezeDiagnostics(_consecutiveUiStalls);
+
+                        if (_consecutiveUiStalls >= UiStallsBeforeRecovery)
+                        {
+                            RecoverFromFrozenUiThread();
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        _consecutiveUiStalls = 0;
                     }
                 }
             });
+        }
+
+        private void LogFreezeDiagnostics(int consecutiveStalls)
+        {
+            try
+            {
+                ThreadPool.GetAvailableThreads(out int availWorker, out int availIo);
+                ThreadPool.GetMinThreads(out int minWorker, out int minIo);
+                ThreadPool.GetMaxThreads(out int maxWorker, out int maxIo);
+                var (gdiObjects, userObjects) = WindowHelper.GetGdiUserHandleCounts();
+
+                using var currentProcess = Process.GetCurrentProcess();
+                currentProcess.Refresh();
+
+                _logger.LogError(
+                    "[WATCHDOG] UI dispatcher unresponsive for ~{Seconds}s (stall #{Count}). "
+                        + "LastStep={Step} "
+                        + "WorkerThreads(avail/min/max)={AvailWorker}/{MinWorker}/{MaxWorker} "
+                        + "IOThreads(avail/min/max)={AvailIo}/{MinIo}/{MaxIo} "
+                        + "GDIObjects={GdiObjects} UserObjects={UserObjects} "
+                        + "HandleCount={HandleCount} ThreadCount={ThreadCount} "
+                        + "WorkingSetMB={WorkingSetMb} ManagedMemoryMB={ManagedMemoryMb} "
+                        + "Gen0/1/2Collections={Gen0}/{Gen1}/{Gen2}",
+                    consecutiveStalls * UiStallCheckIntervalSeconds,
+                    consecutiveStalls,
+                    _currentStep,
+                    availWorker,
+                    minWorker,
+                    maxWorker,
+                    availIo,
+                    minIo,
+                    maxIo,
+                    gdiObjects,
+                    userObjects,
+                    currentProcess.HandleCount,
+                    currentProcess.Threads.Count,
+                    currentProcess.WorkingSet64 / (1024 * 1024),
+                    GC.GetTotalMemory(false) / (1024 * 1024),
+                    GC.CollectionCount(0),
+                    GC.CollectionCount(1),
+                    GC.CollectionCount(2)
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[WATCHDOG] Failed to collect freeze diagnostics");
+            }
+        }
+
+        private void RecoverFromFrozenUiThread()
+        {
+            try
+            {
+                _logger.LogCritical(
+                    "[WATCHDOG] UI dispatcher confirmed unresponsive for ~{Seconds}s. "
+                        + "Relaunching and terminating this instance so the launcher can "
+                        + "keep running unattended.",
+                    _consecutiveUiStalls * UiStallCheckIntervalSeconds
+                );
+                Log.CloseAndFlush();
+
+                string exePath =
+                    Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
+                if (!string.IsNullOrEmpty(exePath))
+                {
+                    Process.Start(
+                        new ProcessStartInfo(exePath)
+                        {
+                            WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+                            UseShellExecute = true,
+                        }
+                    );
+                }
+            }
+            catch { }
+            finally
+            {
+                Process.GetCurrentProcess().Kill();
+            }
         }
 
         private void OnTimedEvent(object sender, ElapsedEventArgs e)
@@ -1116,6 +1253,10 @@ namespace ArcademiaGameLauncher.Windows
             _isTimerRunning = true;
 
             _lastSuccessfulTick = DateTime.Now;
+
+            long nowElapsedMs = _frameStopwatch.ElapsedMilliseconds;
+            int frameMs = (int)Math.Clamp(nowElapsedMs - _lastFrameElapsedMs, 0, MaxFrameMs);
+            _lastFrameElapsedMs = nowElapsedMs;
 
             try
             {
@@ -1134,18 +1275,18 @@ namespace ArcademiaGameLauncher.Windows
                 HandleAFKCheck();
 
                 _currentStep = "UI Animations";
-                AnimateUI();
+                AnimateUI(frameMs);
 
                 _currentStep = "Counters";
                 if (_afkTimerActive)
-                    _afkTimer += _tickSpeed;
+                    _afkTimer += frameMs;
                 if (_selectionUpdateCounter > _selectionUpdateInterval)
                     _selectionUpdateIntervalCounter = 0;
 
-                _selectionUpdateCounter += _tickSpeed;
-                _timeSinceLastButton += _tickSpeed;
+                _selectionUpdateCounter += frameMs;
+                _timeSinceLastButton += frameMs;
 
-                _globalCounter += _tickSpeed;
+                _globalCounter += frameMs;
 
                 if (_globalCounter >= int.MaxValue)
                     _globalCounter = 0;
@@ -1175,8 +1316,6 @@ namespace ArcademiaGameLauncher.Windows
             if (process == null)
                 return;
 
-            // Poll for the game's window handle. MainWindowHandle is cached per-refresh,
-            // so Refresh() must be called each iteration or it returns stale IntPtr.Zero.
             var deadline = DateTime.UtcNow.AddSeconds(10);
             IntPtr handle = IntPtr.Zero;
 
@@ -1206,35 +1345,57 @@ namespace ArcademiaGameLauncher.Windows
 
             _logger.LogDebug("[Focus] Game window found, applying focus");
             WindowHelper.ForceForeground(handle);
+            ApplyWindowZOrder();
 
-            // Re-apply after a short delay — some games briefly re-grab focus during startup
-            await Task.Delay(500);
-            try
+            var settleDeadline = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < settleDeadline)
             {
-                if (!process.HasExited)
+                await Task.Delay(300);
+                try
                 {
+                    if (process.HasExited)
+                        return;
                     process.Refresh();
-                    handle = process.MainWindowHandle;
-                    if (handle != IntPtr.Zero)
+                    var currentHandle = process.MainWindowHandle;
+                    if (currentHandle != IntPtr.Zero)
+                    {
+                        handle = currentHandle;
                         WindowHelper.ForceForeground(handle);
+                    }
                 }
+                catch
+                {
+                    return;
+                }
+                ApplyWindowZOrder();
             }
-            catch { }
         }
 
         private void ApplyWindowZOrder()
         {
             Dispatcher?.InvokeAsync(() =>
             {
+                bool gameRunning =
+                    _currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited;
+
                 IntPtr gameHandle = IntPtr.Zero;
-                if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
+                if (gameRunning)
                 {
                     try
                     {
+                        _currentlyRunningProcess.Refresh();
                         gameHandle = _currentlyRunningProcess.MainWindowHandle;
                     }
                     catch { }
                 }
+
+                if (
+                    gameRunning
+                    && gameHandle == IntPtr.Zero
+                    && !_isClaimWindowVisible
+                    && !_isInfoWindowVisible
+                )
+                    return;
 
                 IntPtr infoHandle = IntPtr.Zero;
                 if (_infoWindow != null)
@@ -1556,11 +1717,11 @@ namespace ArcademiaGameLauncher.Windows
             }
         }
 
-        private void AnimateUI()
+        private void AnimateUI(int frameMs)
         {
             if (
                 (_isHomeMenuVisible || _isSelectionMenuVisible)
-                && _globalCounter % _selectionAnimationFrameRate == 0
+                && _globalCounter % _selectionAnimationFrameRate < frameMs
             )
             {
                 if (_selectionAnimationFrame < _selectionAnimationFrames.Length - 1)
@@ -1581,11 +1742,11 @@ namespace ArcademiaGameLauncher.Windows
                 UpdateCurrentSelection();
 
             if (_isCreditsVisible)
-                AutoScrollCredits();
+                AutoScrollCredits(frameMs);
 
             if (_isStartMenuVisible)
             {
-                if (_timeSinceLastButton % 300 == 0)
+                if (_timeSinceLastButton % 300 < frameMs)
                 {
                     Application.Current?.Dispatcher?.InvokeAsync(
                         () =>
@@ -1990,7 +2151,9 @@ namespace ArcademiaGameLauncher.Windows
 
         // Credits
 
-        private void AutoScrollCredits()
+        private const double CreditsScrollPixelsPerMs = 0.05;
+
+        private void AutoScrollCredits(int frameMs)
         {
             if (_isUpdatingCredits)
                 return;
@@ -2004,7 +2167,7 @@ namespace ArcademiaGameLauncher.Windows
                     {
                         // Change Canvas.Top of the CreditsPanel
                         double currentTop = Canvas.GetTop(CreditsPanel);
-                        double newTop = currentTop - (double)0.5;
+                        double newTop = currentTop - CreditsScrollPixelsPerMs * frameMs;
                         Canvas.SetTop(CreditsPanel, newTop);
 
                         // If the CreditsPanel is off the screen, reset it to the bottom

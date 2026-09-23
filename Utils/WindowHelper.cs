@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -9,6 +10,21 @@ namespace ArcademiaGameLauncher.Utils
     {
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetGuiResources(IntPtr hProcess, uint uiFlags);
+
+        private const uint GR_GDIOBJECTS = 0;
+        private const uint GR_USEROBJECTS = 1;
+
+        public static (uint GdiObjects, uint UserObjects) GetGdiUserHandleCounts()
+        {
+            using var currentProcess = Process.GetCurrentProcess();
+            return (
+                GetGuiResources(currentProcess.Handle, GR_GDIOBJECTS),
+                GetGuiResources(currentProcess.Handle, GR_USEROBJECTS)
+            );
+        }
 
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr ProcessId);
@@ -71,7 +87,6 @@ namespace ArcademiaGameLauncher.Utils
                         SetForegroundWindow(windowHandle);
                         BringWindowToTop(windowHandle);
 
-                        // Toggle TopMost to force Z-Order refresh
                         SetWindowPos(
                             windowHandle,
                             HWND_NOTOPMOST,
@@ -98,7 +113,6 @@ namespace ArcademiaGameLauncher.Utils
                         SetForegroundWindow(windowHandle);
                         BringWindowToTop(windowHandle);
 
-                        // Toggle TopMost to force Z-Order refresh
                         SetWindowPos(
                             windowHandle,
                             HWND_NOTOPMOST,
@@ -206,6 +220,32 @@ namespace ArcademiaGameLauncher.Utils
         {
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
+                if (middleHandle != IntPtr.Zero && middleHandle != topHandle)
+                {
+                    SetWindowPos(
+                        middleHandle,
+                        HWND_NOTOPMOST,
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                    );
+                }
+
+                if (bottomHandle != IntPtr.Zero && bottomHandle != topHandle)
+                {
+                    SetWindowPos(
+                        bottomHandle,
+                        HWND_NOTOPMOST,
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                    );
+                }
+
                 if (topHandle != IntPtr.Zero)
                 {
                     SetWindowPos(
