@@ -414,20 +414,32 @@ namespace ArcademiaGameLauncher.Windows
 
             // Fall back to the placeholder for a tile if its thumbnail fails to load
             // (e.g. the backend is unreachable), instead of leaving a broken image
-            foreach (var tileImage in _gameImagesList)
+            for (int tileIndex = 0; tileIndex < _gameImagesList.Length; tileIndex++)
             {
-                var capturedTileImage = tileImage;
+                var capturedTileImage = _gameImagesList[tileIndex];
+                var capturedTileIndex = tileIndex;
                 AnimationBehavior.AddErrorHandler(
                     capturedTileImage,
                     (s, e) =>
                     {
                         Application.Current?.Dispatcher?.InvokeAsync(() =>
                         {
-                            var placeholder = _isBrowsingCollectionsTopLevel
-                                ? _collectionPlaceholderClosedBitmap
-                                : _placeholderBitmap;
+                            if (!_isBrowsingCollectionsTopLevel)
+                            {
+                                SetImageSource(capturedTileImage, _placeholderBitmap, false);
+                                return;
+                            }
+
+                            int globalIndex = capturedTileIndex + _previousPageIndex * _tilesPerPage;
+                            bool isSelected = globalIndex == _currentlySelectedGameIndex;
                             AnimationBehavior.SetSourceUri(capturedTileImage, null);
-                            SetImageSource(capturedTileImage, placeholder, _isBrowsingCollectionsTopLevel);
+                            SetImageSource(
+                                capturedTileImage,
+                                isSelected
+                                    ? _collectionPlaceholderOpenBitmap
+                                    : _collectionPlaceholderClosedBitmap,
+                                isCollectionPlaceholder: true
+                            );
                         });
                     }
                 );
@@ -647,7 +659,8 @@ namespace ArcademiaGameLauncher.Windows
                         ["Description"] = string.IsNullOrEmpty(collection.Description)
                             ? $"{gameCount} {gameNoun} in this collection."
                             : collection.Description,
-                        ["ThumbnailUrl"] = collection.ImageURL ?? "",
+                        ["ThumbnailUrlClosed"] = collection.ClosedImageURL ?? "",
+                        ["ThumbnailUrlOpen"] = collection.OpenImageURL ?? "",
                         ["VersionNumber"] = $"{gameCount} {gameNoun.ToUpperInvariant()}",
                         ["Authors"] = new JArray(),
                         ["Tags"] = new JArray(),
@@ -658,6 +671,16 @@ namespace ArcademiaGameLauncher.Windows
             }
 
             return [.. result];
+        }
+
+        private static string ResolveCollectionThumbnailUrl(JObject collectionItem, bool preferOpen)
+        {
+            string closedUrl = collectionItem["ThumbnailUrlClosed"]?.ToString() ?? "";
+            string openUrl = collectionItem["ThumbnailUrlOpen"]?.ToString() ?? "";
+
+            return preferOpen
+                ? (!string.IsNullOrEmpty(openUrl) ? openUrl : closedUrl)
+                : (!string.IsNullOrEmpty(closedUrl) ? closedUrl : openUrl);
         }
 
         private void RecomputeGameWorkingList()
@@ -2936,6 +2959,7 @@ namespace ArcademiaGameLauncher.Windows
 
             // Set the previous page index to the current page index
             _previousPageIndex = _pageIndex;
+            _lastFolderStateSelectedIndex = _currentlySelectedGameIndex;
 
             ResetTiles();
 
@@ -2976,7 +3000,12 @@ namespace ArcademiaGameLauncher.Windows
                         continue;
 
                     string name = games[globalIndex]["Name"].ToString();
-                    string thumbUrl = games[globalIndex]["ThumbnailUrl"].ToString();
+                    string thumbUrl = isBrowsingCollections
+                        ? ResolveCollectionThumbnailUrl(
+                            games[globalIndex],
+                            preferOpen: globalIndex == selectedIndex
+                        )
+                        : games[globalIndex]["ThumbnailUrl"].ToString();
                     string folderName = games[globalIndex]["FolderName"].ToString();
                     string imageUri = null;
                     bool isHttp = false;
@@ -3081,7 +3110,9 @@ namespace ArcademiaGameLauncher.Windows
 
                 Task.Run(() =>
                 {
-                    string thumbUrl = game["ThumbnailUrl"].ToString();
+                    string thumbUrl = isBrowsingCollections
+                        ? ResolveCollectionThumbnailUrl(game, preferOpen: true)
+                        : game["ThumbnailUrl"].ToString();
                     string folderName = game["FolderName"].ToString();
                     string imageUri = null;
 
@@ -3389,10 +3420,16 @@ namespace ArcademiaGameLauncher.Windows
             imageElement.RenderTransform = Transform.Identity;
         }
 
+        private int _lastFolderStateSelectedIndex = int.MinValue;
+
         private void UpdateCollectionTileFolderStates()
         {
             if (!_isBrowsingCollectionsTopLevel || _currentGameWorkingList == null)
                 return;
+
+            if (_lastFolderStateSelectedIndex == _currentlySelectedGameIndex)
+                return;
+            _lastFolderStateSelectedIndex = _currentlySelectedGameIndex;
 
             for (int i = 0; i < _tilesPerPage; i++)
             {
@@ -3404,17 +3441,26 @@ namespace ArcademiaGameLauncher.Windows
                     continue;
 
                 // open/closed folder states on hover
-                string thumbUrl = _currentGameWorkingList[globalIndex]["ThumbnailUrl"]?.ToString() ?? "";
-                if (!string.IsNullOrEmpty(thumbUrl))
-                    continue;
-
-                SetImageSource(
-                    _gameImagesList[i],
-                    globalIndex == _currentlySelectedGameIndex
-                        ? _collectionPlaceholderOpenBitmap
-                        : _collectionPlaceholderClosedBitmap,
-                    isCollectionPlaceholder: true
+                bool isSelected = globalIndex == _currentlySelectedGameIndex;
+                string thumbUrl = ResolveCollectionThumbnailUrl(
+                    _currentGameWorkingList[globalIndex],
+                    preferOpen: isSelected
                 );
+
+                if (string.IsNullOrEmpty(thumbUrl))
+                {
+                    AnimationBehavior.SetSourceUri(_gameImagesList[i], null);
+                    SetImageSource(
+                        _gameImagesList[i],
+                        isSelected ? _collectionPlaceholderOpenBitmap : _collectionPlaceholderClosedBitmap,
+                        isCollectionPlaceholder: true
+                    );
+                }
+                else
+                {
+                    ResetImagePresentation(_gameImagesList[i]);
+                    AnimationBehavior.SetSourceUri(_gameImagesList[i], new Uri(thumbUrl, UriKind.Absolute));
+                }
             }
         }
 
