@@ -80,6 +80,12 @@
     <Resource Include="Assets\Images\ThumbnailPlaceholder.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Resource>
+    <Resource Include="Assets\Images\CollectionPlaceholder_Closed.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Assets\Images\CollectionPlaceholder_Open.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Resource>
     <Resource Include="Assets\Images\uolwhite.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Resource>

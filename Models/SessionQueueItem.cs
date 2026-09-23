@@ -7,7 +7,7 @@ namespace ArcademiaGameLauncher.Models
         public string Type { get; set; } = null!;
         public string ExternalId { get; set; } = null!;
 
-        public int? GameAssignmentId { get; set; }
+        public int? GameId { get; set; }
         public string? LauncherStartedAtUtc { get; set; }
 
         public string? EndReason { get; set; }

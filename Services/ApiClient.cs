@@ -31,6 +31,10 @@ namespace ArcademiaGameLauncher.Services
             ILogger<UpdaterService> _logger,
             CancellationToken cancellationToken
         );
+        Task<IEnumerable<CollectionInfo>> GetMachineCollectionsAsync(
+            ILogger<UpdaterService> _logger,
+            CancellationToken cancellationToken
+        );
         Task<(Stream Stream, long? ContentLength)> GetGameDownloadAsync(
             int gameId,
             string versionNumber,
@@ -189,7 +193,7 @@ namespace ArcademiaGameLauncher.Services
         {
             _logger.LogInformation("[ApiClient] Fetching machine games from API...");
 
-            var response = await _http.GetAsync($"/api/GameAssignments/Machine", cancellationToken);
+            var response = await _http.GetAsync($"/api/MachineGames/Machine", cancellationToken);
 
             if (_logger.IsEnabled(LogLevel.Information))
                 _logger.LogInformation(
@@ -242,6 +246,69 @@ namespace ArcademiaGameLauncher.Services
             return games ?? [];
         }
 
+        public async Task<IEnumerable<CollectionInfo>> GetMachineCollectionsAsync(
+            ILogger<UpdaterService> _logger,
+            CancellationToken cancellationToken
+        )
+        {
+            _logger.LogInformation("[ApiClient] Fetching machine collections from API...");
+
+            var response = await _http.GetAsync(
+                $"/api/MachineGames/Machine/Collections",
+                cancellationToken
+            );
+
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation(
+                    "[ApiClient] Received response with status code: {StatusCode}",
+                    response.StatusCode
+                );
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorMessage = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (
+                    response.StatusCode == System.Net.HttpStatusCode.BadRequest
+                    || response.StatusCode == System.Net.HttpStatusCode.NotFound
+                )
+                {
+                    if (_logger.IsEnabled(LogLevel.Warning))
+                        _logger.LogWarning(
+                            "[ApiClient] Warning whilst executing GetMachineCollectionsAsync: {message}",
+                            errorMessage
+                        );
+                }
+                else if (_logger.IsEnabled(LogLevel.Error))
+                    _logger.LogError(
+                        "[ApiClient] Unexpected error whilst executing GetMachineCollectionsAsync: {StatusCode}",
+                        response.StatusCode
+                    );
+
+                _logger.LogInformation("[ApiClient] Returning empty collection list due to error.");
+
+                return [];
+            }
+            response.EnsureSuccessStatusCode();
+
+            await using var stream = await response.Content.ReadAsStreamAsync();
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+            var collections = await JsonSerializer.DeserializeAsync<IEnumerable<CollectionInfo>>(
+                stream,
+                options
+            );
+
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation(
+                    "[ApiClient] Retrieved {CollectionCount} collections from API.",
+                    collections?.Count() ?? 0
+                );
+
+            return collections ?? [];
+        }
+
         public async Task<(Stream Stream, long? ContentLength)> GetGameDownloadAsync(
             int gameId,
             string versionNumber,
@@ -250,7 +317,7 @@ namespace ArcademiaGameLauncher.Services
         )
         {
             var response = await _http.GetAsync(
-                $"/api/GameAssignments/{gameId}/Download?versionNumber={versionNumber ?? "0.0.0"}",
+                $"/api/MachineGames/{gameId}/Download?versionNumber={versionNumber ?? "0.0.0"}",
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken
             );
@@ -279,7 +346,7 @@ namespace ArcademiaGameLauncher.Services
                 "application/json"
             );
             var response = await _http.PutAsync(
-                $"/api/GameAssignments/{gameId}/UpdateVersion",
+                $"/api/MachineGames/{gameId}/UpdateVersion",
                 content
             );
 

@@ -34,10 +34,14 @@ namespace ArcademiaGameLauncher.Services
         public string GameName { get; } = gameName;
     }
 
-    public class GameDatabaseFetchedEventArgs(IEnumerable<GameInfo> games)
+    public class GameDatabaseFetchedEventArgs(
+        IEnumerable<GameInfo> games,
+        IEnumerable<CollectionInfo> collections
+    )
     {
         public SimplifiedGameInfo[] Games { get; } =
             [.. games.Select(game => new SimplifiedGameInfo(game))];
+        public CollectionInfo[] Collections { get; } = [.. collections ?? []];
     }
 
     public class GameUpdateCompletedEventArgs(string gameName)
@@ -78,8 +82,14 @@ namespace ArcademiaGameLauncher.Services
 
         public event EventHandler<GameDatabaseFetchedEventArgs> GameDatabaseFetched;
 
-        protected void OnGameDatabaseFetched(IEnumerable<GameInfo> games) =>
-            GameDatabaseFetched?.Invoke(this, new GameDatabaseFetchedEventArgs(games));
+        protected void OnGameDatabaseFetched(
+            IEnumerable<GameInfo> games,
+            IEnumerable<CollectionInfo> collections
+        ) =>
+            GameDatabaseFetched?.Invoke(
+                this,
+                new GameDatabaseFetchedEventArgs(games, collections)
+            );
 
         public event EventHandler<GameUpdateCompletedEventArgs> GameUpdateCompleted;
 
@@ -221,8 +231,25 @@ namespace ArcademiaGameLauncher.Services
                     return;
                 }
 
+                IEnumerable<CollectionInfo> collections;
+                try
+                {
+                    collections = await _apiClient.GetMachineCollectionsAsync(
+                        _logger,
+                        cancellationToken
+                    );
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        "[UpdaterService] Could not fetch collections, treating as empty: {Message}",
+                        ex.Message
+                    );
+                    collections = [];
+                }
+
                 // Callback to notify that the game database has been fetched
-                OnGameDatabaseFetched(games);
+                OnGameDatabaseFetched(games, collections);
 
                 // Update each game
                 foreach (var game in games)

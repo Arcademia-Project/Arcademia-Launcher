@@ -284,7 +284,7 @@ namespace ArcademiaGameLauncher.Utils
 
         public async Task InvokeSessionStartAsync(
             string externalId,
-            int gameAssignmentId,
+            int gameId,
             string launcherStartedAtUtc
         )
         {
@@ -293,7 +293,7 @@ namespace ArcademiaGameLauncher.Utils
             await _hub.InvokeAsync(
                 "SessionStart",
                 externalId,
-                gameAssignmentId,
+                gameId,
                 launcherStartedAtUtc
             );
             _logger.LogDebug("[SignalR] SessionStart sent: {ExternalId}", externalId);
