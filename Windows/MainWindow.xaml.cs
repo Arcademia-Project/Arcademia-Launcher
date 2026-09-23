@@ -197,22 +197,20 @@ namespace ArcademiaGameLauncher.Windows
             _collectionPlaceholderClosedBitmap = new BitmapImage();
             _collectionPlaceholderClosedBitmap.BeginInit();
             _collectionPlaceholderClosedBitmap.UriSource = new Uri(
-                "/Assets/Images/CollectionPlaceholder_Closed.png",
-                UriKind.Relative
+                "pack://application:,,,/Assets/Images/CollectionPlaceholder_Closed.png",
+                UriKind.Absolute
             );
             _collectionPlaceholderClosedBitmap.CacheOption = BitmapCacheOption.OnLoad;
-            _collectionPlaceholderClosedBitmap.CreateOptions = BitmapCreateOptions.DelayCreation;
             _collectionPlaceholderClosedBitmap.EndInit();
             _collectionPlaceholderClosedBitmap.Freeze();
 
             _collectionPlaceholderOpenBitmap = new BitmapImage();
             _collectionPlaceholderOpenBitmap.BeginInit();
             _collectionPlaceholderOpenBitmap.UriSource = new Uri(
-                "/Assets/Images/CollectionPlaceholder_Open.png",
-                UriKind.Relative
+                "pack://application:,,,/Assets/Images/CollectionPlaceholder_Open.png",
+                UriKind.Absolute
             );
             _collectionPlaceholderOpenBitmap.CacheOption = BitmapCacheOption.OnLoad;
-            _collectionPlaceholderOpenBitmap.CreateOptions = BitmapCreateOptions.DelayCreation;
             _collectionPlaceholderOpenBitmap.EndInit();
             _collectionPlaceholderOpenBitmap.Freeze();
 
@@ -413,6 +411,39 @@ namespace ArcademiaGameLauncher.Windows
                 GameImage13,
                 GameImage14,
             ];
+
+            // Fall back to the placeholder for a tile if its thumbnail fails to load
+            // (e.g. the backend is unreachable), instead of leaving a broken image
+            foreach (var tileImage in _gameImagesList)
+            {
+                var capturedTileImage = tileImage;
+                AnimationBehavior.AddErrorHandler(
+                    capturedTileImage,
+                    (s, e) =>
+                    {
+                        Application.Current?.Dispatcher?.InvokeAsync(() =>
+                        {
+                            var placeholder = _isBrowsingCollectionsTopLevel
+                                ? _collectionPlaceholderClosedBitmap
+                                : _placeholderBitmap;
+                            AnimationBehavior.SetSourceUri(capturedTileImage, null);
+                            SetImageSource(capturedTileImage, placeholder, _isBrowsingCollectionsTopLevel);
+                        });
+                    }
+                );
+            }
+
+            AnimationBehavior.AddErrorHandler(
+                Gif_GameThumbnail,
+                (s, e) =>
+                {
+                    Application.Current?.Dispatcher?.InvokeAsync(() =>
+                    {
+                        AnimationBehavior.SetSourceUri(Gif_GameThumbnail, null);
+                    });
+                }
+            );
+
             LoadGameDatabase();
             InitHomeThumbnailScroll();
 
@@ -605,16 +636,19 @@ namespace ArcademiaGameLauncher.Windows
             var result = new List<JObject>();
             foreach (var collection in _collectionInfoList)
             {
+                int gameCount = collection.GameIds.Count;
+                string gameNoun = gameCount == 1 ? "game" : "games";
+
                 result.Add(
                     new JObject
                     {
                         ["Id"] = collection.CollectionId,
                         ["Name"] = collection.Name,
                         ["Description"] = string.IsNullOrEmpty(collection.Description)
-                            ? $"{collection.GameIds.Count} game(s) in this collection."
+                            ? $"{gameCount} {gameNoun} in this collection."
                             : collection.Description,
                         ["ThumbnailUrl"] = collection.ImageURL ?? "",
-                        ["VersionNumber"] = $"{collection.GameIds.Count} GAMES",
+                        ["VersionNumber"] = $"{gameCount} {gameNoun.ToUpperInvariant()}",
                         ["Authors"] = new JArray(),
                         ["Tags"] = new JArray(),
                         ["FolderName"] = "",
@@ -1056,12 +1090,25 @@ namespace ArcademiaGameLauncher.Windows
         private void BackFromGameLibraryButton_Click(object sender, RoutedEventArgs e)
         {
             bool returnToCollections = _selectionMenuEnteredViaCollection;
+            int? exitedCollectionId = _activeCollectionInfo?.CollectionId;
 
             _activeCollectionInfo = null;
             _selectionMenuEnteredViaCollection = false;
             _isBrowsingCollectionsTopLevel =
                 returnToCollections && _collectionInfoList != null && _collectionInfoList.Length > 0;
             RefreshGameWorkingListFromSource();
+
+            // Re-select the collection that was just backed out of, instead of resetting to the first one
+            int returnSelectedIndex = 0;
+            if (_isBrowsingCollectionsTopLevel && exitedCollectionId.HasValue)
+            {
+                int foundIndex = Array.FindIndex(
+                    _currentGameWorkingList,
+                    g => g != null && (int)g["Id"] == exitedCollectionId.Value
+                );
+                if (foundIndex >= 0)
+                    returnSelectedIndex = foundIndex;
+            }
 
             try
             {
@@ -1079,7 +1126,7 @@ namespace ArcademiaGameLauncher.Windows
                     if (_isBrowsingCollectionsTopLevel)
                     {
                         SelectionMenuHeaderText.Text = "Collections";
-                        ChangePage(0);
+                        ChangePage(returnSelectedIndex / _tilesPerPage);
                     }
                     else
                     {
@@ -1107,7 +1154,8 @@ namespace ArcademiaGameLauncher.Windows
 
             if (_isBrowsingCollectionsTopLevel)
             {
-                _currentlySelectedGameIndex = _currentGameWorkingList.Length > 0 ? 0 : -1;
+                _currentlySelectedGameIndex =
+                    _currentGameWorkingList.Length > 0 ? returnSelectedIndex : -1;
                 DebounceUpdateGameInfoDisplay();
             }
             else
@@ -2757,6 +2805,8 @@ namespace ArcademiaGameLauncher.Windows
                     int pageIndex = _currentlySelectedGameIndex / _tilesPerPage;
                     if (pageIndex != _previousPageIndex)
                         ChangePage(pageIndex);
+                    else
+                        UpdateCollectionTileFolderStates();
 
                     //If a game is selected
                     if (_currentlySelectedGameIndex >= 0)
@@ -2977,7 +3027,7 @@ namespace ArcademiaGameLauncher.Windows
                             if (String.IsNullOrEmpty(update.ImageUri))
                             {
                                 int globalIndex = tileIndex + pageIndex * tilesPerPage;
-                                _gameImagesList[tileIndex].Source = isBrowsingCollections
+                                var placeholder = isBrowsingCollections
                                     ? (
                                         globalIndex == selectedIndex
                                             ? _collectionPlaceholderOpenBitmap
@@ -2985,9 +3035,11 @@ namespace ArcademiaGameLauncher.Windows
                                     )
                                     : _placeholderBitmap;
                                 AnimationBehavior.SetSourceUri(_gameImagesList[tileIndex], null);
+                                SetImageSource(_gameImagesList[tileIndex], placeholder, isBrowsingCollections);
                             }
                             else if (update.IsHttp)
                             {
+                                ResetImagePresentation(_gameImagesList[tileIndex]);
                                 AnimationBehavior.SetSourceUri(
                                     _gameImagesList[tileIndex],
                                     new Uri(update.ImageUri, UriKind.Absolute)
@@ -3057,21 +3109,14 @@ namespace ArcademiaGameLauncher.Windows
                             StartButton.IsChecked = true;
 
                             // Set the Game Thumbnail
+                            SetImageSource(
+                                NonGif_GameThumbnail,
+                                isBrowsingCollections ? _collectionPlaceholderOpenBitmap : _placeholderBitmap,
+                                isBrowsingCollections
+                            );
+
                             if (imageUri != null)
                             {
-                                if (imageUri.StartsWith("http"))
-                                {
-                                    NonGif_GameThumbnail.Source = new BitmapImage(
-                                        new Uri(imageUri, UriKind.Absolute)
-                                    );
-                                }
-                                else
-                                {
-                                    NonGif_GameThumbnail.Source = new BitmapImage(
-                                        new Uri(imageUri, UriKind.Absolute)
-                                    );
-                                }
-
                                 AnimationBehavior.SetSourceUri(
                                     Gif_GameThumbnail,
                                     new Uri(imageUri, UriKind.Absolute)
@@ -3079,10 +3124,6 @@ namespace ArcademiaGameLauncher.Windows
                             }
                             else
                             {
-                                // Set the placeholder image
-                                NonGif_GameThumbnail.Source = isBrowsingCollections
-                                    ? _collectionPlaceholderOpenBitmap
-                                    : _placeholderBitmap;
                                 AnimationBehavior.SetSourceUri(Gif_GameThumbnail, null);
                             }
 
@@ -3094,16 +3135,24 @@ namespace ArcademiaGameLauncher.Windows
                                 minFontSize: 8,
                                 precision: 0.1
                             );
-                            GameAuthors.FitTextToTextBlock(
-                                desiredText: string.Join(
-                                    ", ",
-                                    game["Authors"].ToObject<string[]>()
-                                ),
-                                targetFontSize: 14,
-                                maxLines: 2,
-                                minFontSize: 8,
-                                precision: 0.1
+                            string authorsText = string.Join(
+                                ", ",
+                                game["Authors"].ToObject<string[]>()
                             );
+                            if (string.IsNullOrWhiteSpace(authorsText))
+                            {
+                                GameAuthors.Text = "";
+                            }
+                            else
+                            {
+                                GameAuthors.FitTextToTextBlock(
+                                    desiredText: authorsText,
+                                    targetFontSize: 14,
+                                    maxLines: 2,
+                                    minFontSize: 8,
+                                    precision: 0.1
+                                );
+                            }
 
                             // Fetch the Game Tag Elements (Borders and TextBlocks)
                             Border[] GameTagBorder =
@@ -3191,9 +3240,6 @@ namespace ArcademiaGameLauncher.Windows
             if (_currentlySelectedGameIndex >= 0)
                 StyleStartButtonState(_currentlySelectedGameIndex);
 
-            if (_isBrowsingCollectionsTopLevel && _currentlySelectedGameIndex >= 0)
-                StartButton.Content = "Open Collection";
-
             if (_logger.IsEnabled(LogLevel.Information))
                 _logger.LogInformation("[UI] UpdateGameInfoDisplay: End");
         }
@@ -3232,12 +3278,23 @@ namespace ArcademiaGameLauncher.Windows
             try
             {
                 _logger.LogDebug("[UI] StyleStartButtonState: Queued");
+                var isBrowsingCollections = _isBrowsingCollectionsTopLevel;
                 _dispatcherQueue.EnqueueUnique(
                     "StyleStartButton",
                     () =>
                     {
                         if (_logger.IsEnabled(LogLevel.Debug))
                             _logger.LogDebug("[UI] StyleStartButtonState: Start");
+
+                        if (isBrowsingCollections)
+                        {
+                            StartButton.IsChecked = true;
+                            StartButton.Content = "Open Collection";
+                            SetStartButtonFill(0.0, Brushes.Transparent);
+                            if (_logger.IsEnabled(LogLevel.Information))
+                                _logger.LogInformation("[UI] StyleStartButtonState: End");
+                            return;
+                        }
 
                         switch (_gameState)
                         {
@@ -3304,6 +3361,63 @@ namespace ArcademiaGameLauncher.Windows
 
         // Reset Methods
 
+        private static readonly ScaleTransform s_collectionPlaceholderScale = CreateFrozenHalfScale();
+
+        private static ScaleTransform CreateFrozenHalfScale()
+        {
+            var transform = new ScaleTransform(0.5, 0.5);
+            transform.Freeze();
+            return transform;
+        }
+
+        private static void SetImageSource(Image imageElement, ImageSource source, bool isCollectionPlaceholder)
+        {
+            imageElement.Source = source;
+            RenderOptions.SetBitmapScalingMode(
+                imageElement,
+                isCollectionPlaceholder ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.Unspecified
+            );
+            imageElement.RenderTransformOrigin = new Point(0.5, 0.5);
+            imageElement.RenderTransform = isCollectionPlaceholder
+                ? s_collectionPlaceholderScale
+                : Transform.Identity;
+        }
+
+        private static void ResetImagePresentation(Image imageElement)
+        {
+            RenderOptions.SetBitmapScalingMode(imageElement, BitmapScalingMode.Unspecified);
+            imageElement.RenderTransform = Transform.Identity;
+        }
+
+        private void UpdateCollectionTileFolderStates()
+        {
+            if (!_isBrowsingCollectionsTopLevel || _currentGameWorkingList == null)
+                return;
+
+            for (int i = 0; i < _tilesPerPage; i++)
+            {
+                int globalIndex = i + _previousPageIndex * _tilesPerPage;
+                if (
+                    globalIndex >= _currentGameWorkingList.Length
+                    || _currentGameWorkingList[globalIndex] == null
+                )
+                    continue;
+
+                // open/closed folder states on hover
+                string thumbUrl = _currentGameWorkingList[globalIndex]["ThumbnailUrl"]?.ToString() ?? "";
+                if (!string.IsNullOrEmpty(thumbUrl))
+                    continue;
+
+                SetImageSource(
+                    _gameImagesList[i],
+                    globalIndex == _currentlySelectedGameIndex
+                        ? _collectionPlaceholderOpenBitmap
+                        : _collectionPlaceholderClosedBitmap,
+                    isCollectionPlaceholder: true
+                );
+            }
+        }
+
         private void ResetTiles()
         {
             var placeholder = _isBrowsingCollectionsTopLevel
@@ -3316,8 +3430,8 @@ namespace ArcademiaGameLauncher.Windows
                 _gameTilesList[i].Visibility = Visibility.Hidden;
                 // Reset the text of all titles
                 _gameTitlesList[i].Content = "Loading...";
-                // Reset all the images
-                _gameImagesList[i].Source = placeholder;
+                AnimationBehavior.SetSourceUri(_gameImagesList[i], null);
+                SetImageSource(_gameImagesList[i], placeholder, _isBrowsingCollectionsTopLevel);
             }
         }
 
@@ -3328,9 +3442,11 @@ namespace ArcademiaGameLauncher.Windows
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
                 // Reset the Thumbnail
-                NonGif_GameThumbnail.Source = isBrowsingCollections
-                    ? _collectionPlaceholderClosedBitmap
-                    : _placeholderBitmap;
+                SetImageSource(
+                    NonGif_GameThumbnail,
+                    isBrowsingCollections ? _collectionPlaceholderClosedBitmap : _placeholderBitmap,
+                    isBrowsingCollections
+                );
                 AnimationBehavior.SetSourceUri(Gif_GameThumbnail, null);
 
                 // Reset the Text Content of each element
