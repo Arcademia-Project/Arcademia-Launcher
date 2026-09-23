@@ -36,6 +36,7 @@ namespace ArcademiaGameLauncher.Services
 
         private readonly ISessionTrackingService _session;
         private readonly IClaimCoordinator _claims;
+        private readonly IApiClient _api;
         private readonly ILogger<SdkBrokerService> _logger;
         private readonly object _gate = new();
 
@@ -44,11 +45,13 @@ namespace ArcademiaGameLauncher.Services
         public SdkBrokerService(
             ISessionTrackingService session,
             IClaimCoordinator claims,
+            IApiClient api,
             ILogger<SdkBrokerService> logger
         )
         {
             _session = session;
             _claims = claims;
+            _api = api;
             _logger = logger;
             _session.SessionEnded += Stop;
         }
@@ -195,6 +198,9 @@ namespace ArcademiaGameLauncher.Services
                     case "requestClaim":
                         return await HandleRequestClaimAsync(id, root);
 
+                    case "getScores":
+                        return await HandleGetScoresAsync(id, root, environment);
+
                     default:
                         return Error(id, "unknown_op", "Unknown operation.");
                 }
@@ -295,6 +301,72 @@ namespace ArcademiaGameLauncher.Services
                     message = outcome.Message,
                 }
             );
+        }
+
+        private async Task<string> HandleGetScoresAsync(
+            string id,
+            JsonElement root,
+            SdkSessionEnvironment environment
+        )
+        {
+            var boardSlug = GetString(root, "boardSlug");
+            var apiKey = GetString(root, "apiKey");
+            var scope = GetString(root, "scope");
+            var mode = GetString(root, "mode");
+            var ranks = GetString(root, "ranks");
+            var scoreId = GetString(root, "scoreId");
+
+            if (string.IsNullOrWhiteSpace(boardSlug) || boardSlug.Length > 50)
+                return Error(id, "invalid_request", "boardSlug is required.");
+            if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Length > 128)
+                return Error(id, "invalid_request", "apiKey is required.");
+            if (scope is { Length: > 20 })
+                return Error(id, "invalid_request", "scope is too long.");
+            if (mode is { Length: > 10 })
+                return Error(id, "invalid_request", "mode is too long.");
+            if (ranks is { Length: > 200 })
+                return Error(id, "invalid_request", "ranks is too long.");
+            if (scoreId is not null && !Guid.TryParse(scoreId, out _))
+                return Error(id, "invalid_request", "scoreId must be a GUID.");
+            if (!TryGetCount(root, "before", out var before) || !TryGetCount(root, "after", out var after))
+                return Error(id, "invalid_request", "before and after must be between 0 and 50.");
+
+            var result = await _api.ReadLeaderboardScoresAsync(
+                new ScoreReadRequest(boardSlug, scope, mode, ranks, scoreId, before, after, apiKey),
+                environment.SessionId,
+                CancellationToken.None
+            );
+
+            if (result.Kind == ScorePostKind.Transient)
+                return Error(id, "offline", result.Message ?? "The leaderboard service could not be reached.");
+            if (result.Kind == ScorePostKind.Rejected)
+                return Error(id, "rejected", result.Message ?? "The leaderboard request was rejected.");
+
+            using var buffer = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                writer.WriteStartObject();
+                if (id is null)
+                    writer.WriteNull("id");
+                else
+                    writer.WriteString("id", id);
+                writer.WriteBoolean("ok", true);
+                foreach (var property in result.Body!.Value.EnumerateObject())
+                    if (property.Name is not ("id" or "ok"))
+                        property.WriteTo(writer);
+                writer.WriteEndObject();
+            }
+            return Encoding.UTF8.GetString(buffer.ToArray());
+        }
+
+        private static bool TryGetCount(JsonElement root, string name, out int value)
+        {
+            value = 0;
+            if (!root.TryGetProperty(name, out var element) || element.ValueKind == JsonValueKind.Null)
+                return true;
+            return element.ValueKind == JsonValueKind.Number
+                && element.TryGetInt32(out value)
+                && value is >= 0 and <= 50;
         }
 
         private static string GetString(JsonElement root, string name) =>

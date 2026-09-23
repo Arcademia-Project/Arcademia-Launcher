@@ -62,6 +62,12 @@ namespace ArcademiaGameLauncher.Services
         );
 
         Task CancelClaimAsync(string code, CancellationToken cancellationToken);
+
+        Task<ScoreReadResult> ReadLeaderboardScoresAsync(
+            ScoreReadRequest request,
+            string sessionId,
+            CancellationToken cancellationToken
+        );
     }
 
     public class ApiClient(HttpClient http) : IApiClient
@@ -534,9 +540,57 @@ namespace ArcademiaGameLauncher.Services
                 };
                 using var response = await _http.SendAsync(request, cancellationToken);
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { }
+        }
+
+        public async Task<ScoreReadResult> ReadLeaderboardScoresAsync(
+            ScoreReadRequest request,
+            string sessionId,
+            CancellationToken cancellationToken
+        )
+        {
+            var payload = new
             {
-                // Best-effort — the claim will simply expire on its own if this fails.
+                sessionId,
+                apiKey = request.ApiKey,
+                boardSlug = request.BoardSlug,
+                scope = request.Scope,
+                mode = request.Mode,
+                ranks = request.Ranks,
+                scoreId = request.ScoreId,
+                before = request.Before,
+                after = request.After,
+            };
+
+            try
+            {
+                using var response = await _http.PostAsJsonAsync(
+                    "/api/Leaderboards/Machine/Scores/Read",
+                    payload,
+                    cancellationToken
+                );
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    return new ScoreReadResult(ScorePostKind.Accepted, doc.RootElement.Clone(), null);
+                }
+
+                var status = (int)response.StatusCode;
+                var message = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body;
+                var transient = status is 401 or 408 or 429 || status >= 500;
+
+                return new ScoreReadResult(
+                    transient ? ScorePostKind.Transient : ScorePostKind.Rejected,
+                    null,
+                    message
+                );
+            }
+            catch (Exception ex)
+                when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return new ScoreReadResult(ScorePostKind.Transient, null, ex.Message);
             }
         }
     }

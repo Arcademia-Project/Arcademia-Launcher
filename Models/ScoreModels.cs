@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 
 namespace ArcademiaGameLauncher.Models
 {
@@ -33,4 +34,17 @@ namespace ArcademiaGameLauncher.Models
         bool Duplicate,
         string Message
     );
+
+    public sealed record ScoreReadRequest(
+        string BoardSlug,
+        string Scope,
+        string Mode,
+        string Ranks,
+        string ScoreId,
+        int Before,
+        int After,
+        string ApiKey
+    );
+
+    public sealed record ScoreReadResult(ScorePostKind Kind, JsonElement? Body, string Message);
 }
