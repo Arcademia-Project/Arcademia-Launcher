@@ -63,6 +63,16 @@ namespace ArcademiaGameLauncher.Services
 
         Task CancelClaimAsync(string code, CancellationToken cancellationToken);
 
+        Task<ClaimStatusResult> GetClaimStatusAsync(string code, CancellationToken cancellationToken);
+
+        Task<ScoreNameResult> SetScorePlayerNameAsync(
+            string scoreId,
+            string sessionId,
+            string apiKey,
+            string playerName,
+            CancellationToken cancellationToken
+        );
+
         Task<ScoreReadResult> ReadLeaderboardScoresAsync(
             ScoreReadRequest request,
             string sessionId,
@@ -541,6 +551,103 @@ namespace ArcademiaGameLauncher.Services
                 using var response = await _http.SendAsync(request, cancellationToken);
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { }
+        }
+
+        public async Task<ClaimStatusResult> GetClaimStatusAsync(
+            string code,
+            CancellationToken cancellationToken
+        )
+        {
+            try
+            {
+                using var response = await _http.PostAsJsonAsync(
+                    "/api/Leaderboards/Machine/Claims/Status",
+                    new { code },
+                    cancellationToken
+                );
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    var root = doc.RootElement;
+                    return new ClaimStatusResult(
+                        ClaimPostKind.Accepted,
+                        root.TryGetProperty("status", out var status) ? status.GetString() : null,
+                        root.TryGetProperty("playerName", out var name) && name.ValueKind == JsonValueKind.String
+                            ? name.GetString()
+                            : null,
+                        null
+                    );
+                }
+
+                var statusCode = (int)response.StatusCode;
+                var transient = statusCode is 401 or 408 or 429 || statusCode >= 500;
+                return new ClaimStatusResult(
+                    transient ? ClaimPostKind.Transient : ClaimPostKind.Rejected,
+                    null,
+                    null,
+                    string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body
+                );
+            }
+            catch (Exception ex)
+                when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return new ClaimStatusResult(ClaimPostKind.Transient, null, null, ex.Message);
+            }
+        }
+
+        public async Task<ScoreNameResult> SetScorePlayerNameAsync(
+            string scoreId,
+            string sessionId,
+            string apiKey,
+            string playerName,
+            CancellationToken cancellationToken
+        )
+        {
+            var payload = new
+            {
+                scoreId,
+                sessionId,
+                apiKey,
+                playerName,
+            };
+
+            try
+            {
+                using var response = await _http.PostAsJsonAsync(
+                    "/api/Leaderboards/Machine/Scores/Name",
+                    payload,
+                    cancellationToken
+                );
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    var root = doc.RootElement;
+                    return new ScoreNameResult(
+                        ScorePostKind.Accepted,
+                        root.TryGetProperty("playerName", out var name) ? name.GetString() : playerName,
+                        null
+                    );
+                }
+
+                var status = (int)response.StatusCode;
+                var message = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body;
+                var transient = status is 401 or 408 or 429 || status >= 500;
+
+                return new ScoreNameResult(
+                    transient ? ScorePostKind.Transient : ScorePostKind.Rejected,
+                    null,
+                    message
+                );
+            }
+            catch (Exception ex)
+                when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return new ScoreNameResult(ScorePostKind.Transient, null, ex.Message);
+            }
         }
 
         private static string LocalTimeZoneId()

@@ -195,6 +195,9 @@ namespace ArcademiaGameLauncher.Services
                     case "submitScore":
                         return await HandleSubmitScoreAsync(id, root);
 
+                    case "setPlayerName":
+                        return await HandleSetPlayerNameAsync(id, root);
+
                     case "requestClaim":
                         return await HandleRequestClaimAsync(id, root);
 
@@ -298,6 +301,37 @@ namespace ArcademiaGameLauncher.Services
                     id,
                     ok = true,
                     status = outcome.Status,
+                    scoreId = targetScoreId,
+                    playerName = outcome.PlayerName,
+                    claimed = outcome.Status == "saved" ? (bool?)true : null,
+                    message = outcome.Message,
+                }
+            );
+        }
+
+        private async Task<string> HandleSetPlayerNameAsync(string id, JsonElement root)
+        {
+            var apiKey = GetString(root, "apiKey");
+            if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Length > 128)
+                return Error(id, "invalid_request", "apiKey is required.");
+
+            if (!Guid.TryParse(GetString(root, "scoreId"), out var scoreId))
+                return Error(id, "invalid_request", "scoreId must be a GUID.");
+
+            var playerName = GetString(root, "playerName");
+            if (playerName is { Length: > 64 })
+                return Error(id, "invalid_request", "playerName is too long.");
+
+            var outcome = await _session.SetPlayerNameAsync(scoreId.ToString(), playerName, apiKey);
+
+            return Serialize(
+                new
+                {
+                    id,
+                    ok = true,
+                    status = outcome.Status,
+                    scoreId = outcome.ScoreId,
+                    playerName = outcome.PlayerName,
                     message = outcome.Message,
                 }
             );

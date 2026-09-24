@@ -16,5 +16,7 @@ namespace ArcademiaGameLauncher.Models
         string Message
     );
 
-    public sealed record ClaimOutcome(string Status, string Message);
+    public sealed record ClaimOutcome(string Status, string Message, string PlayerName = null);
+
+    public sealed record ClaimStatusResult(ClaimPostKind Kind, string Status, string PlayerName, string Message);
 }

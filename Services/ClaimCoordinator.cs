@@ -123,13 +123,24 @@ namespace ArcademiaGameLauncher.Services
                     status = winner == completion.Task ? await completion.Task : "expired";
                 }
 
+                string playerName = null;
+                if (status is ("saved" or "expired") && !string.IsNullOrEmpty(code))
+                {
+                    var check = await _api.GetClaimStatusAsync(code, CancellationToken.None);
+                    if (check.Kind == ClaimPostKind.Accepted && check.Status == "saved")
+                    {
+                        status = "saved";
+                        playerName = check.PlayerName;
+                    }
+                }
+
                 _logger.LogInformation(
                     "[Claim] Resolved score {ScoreId}: {Status}",
                     targetScoreId,
                     status
                 );
 
-                return new ClaimOutcome(status, null);
+                return new ClaimOutcome(status, null, playerName);
             }
             finally
             {

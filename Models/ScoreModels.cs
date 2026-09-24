@@ -46,5 +46,9 @@ namespace ArcademiaGameLauncher.Models
         string ApiKey
     );
 
+    public sealed record ScoreNameOutcome(string Status, string ScoreId, string PlayerName, string Message);
+
+    public sealed record ScoreNameResult(ScorePostKind Kind, string PlayerName, string Message);
+
     public sealed record ScoreReadResult(ScorePostKind Kind, JsonElement? Body, string Message);
 }

@@ -17,7 +17,7 @@
         Height="{DynamicResource {x:Static SystemParameters.PrimaryScreenHeightKey}}">
     <!-- Declare the Launcher Version, Global Font and ToggleButton style -->
     <Window.Resources>
-        <System:String x:Key="LauncherVersion">[v2.8.2-26 Release Build]</System:String>
+        <System:String x:Key="LauncherVersion">[v2.8.3-26 Release Build]</System:String>
         <System:String x:Key="YearStyle">yyyy</System:String>
         <System:Double x:Key="LogicalSizeWidth">1920</System:Double>
         <System:Double x:Key="LogicalSizeHeight">1080</System:Double>

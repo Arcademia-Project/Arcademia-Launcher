@@ -24,6 +24,7 @@ namespace ArcademiaGameLauncher.Services
         );
         Task EndSessionAsync(string endReason);
         Task<ScoreOutcome> SubmitScoreAsync(ScoreRequest request);
+        Task<ScoreNameOutcome> SetPlayerNameAsync(string scoreId, string playerName, string apiKey);
         Task FlushQueueAsync();
         Task RecoverCrashAsync();
     }
@@ -228,6 +229,54 @@ namespace ArcademiaGameLauncher.Services
                 _ = Task.Run(FlushQueueAsync);
 
             return new ScoreOutcome("queued", item.ScoreId, null, false, null);
+        }
+
+        public async Task<ScoreNameOutcome> SetPlayerNameAsync(
+            string scoreId,
+            string playerName,
+            string apiKey
+        )
+        {
+            var sessionId = _currentExternalId;
+            if (sessionId is null)
+                return new ScoreNameOutcome("rejected", scoreId, null, "No game session is active.");
+
+            await _lock.WaitAsync();
+            try
+            {
+                var items = LoadQueue();
+                var queued = items.Find(i =>
+                    i.Type == "Score"
+                    && i.ExternalId == sessionId
+                    && string.Equals(i.ScoreId, scoreId, StringComparison.OrdinalIgnoreCase)
+                );
+                if (queued is not null)
+                {
+                    queued.PlayerName = playerName;
+                    SaveQueue(items);
+                    return new ScoreNameOutcome("queued", scoreId, playerName, null);
+                }
+            }
+            finally
+            {
+                _lock.Release();
+            }
+
+            using var cts = new CancellationTokenSource(ScoreSendTimeout);
+            var result = await _api.SetScorePlayerNameAsync(
+                scoreId,
+                sessionId,
+                apiKey,
+                playerName,
+                cts.Token
+            );
+
+            return result.Kind switch
+            {
+                ScorePostKind.Accepted => new ScoreNameOutcome("saved", scoreId, result.PlayerName, null),
+                ScorePostKind.Rejected => new ScoreNameOutcome("rejected", scoreId, null, result.Message),
+                _ => new ScoreNameOutcome("offline", scoreId, null, result.Message),
+            };
         }
 
         public async Task FlushQueueAsync()
