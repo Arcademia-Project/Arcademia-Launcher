@@ -543,6 +543,14 @@ namespace ArcademiaGameLauncher.Services
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { }
         }
 
+        private static string LocalTimeZoneId()
+        {
+            var local = TimeZoneInfo.Local;
+            if (local.HasIanaId)
+                return local.Id;
+            return TimeZoneInfo.TryConvertWindowsIdToIanaId(local.Id, out var iana) ? iana : local.Id;
+        }
+
         public async Task<ScoreReadResult> ReadLeaderboardScoresAsync(
             ScoreReadRequest request,
             string sessionId,
@@ -560,6 +568,8 @@ namespace ArcademiaGameLauncher.Services
                 scoreId = request.ScoreId,
                 before = request.Before,
                 after = request.After,
+                timeZone = LocalTimeZoneId(),
+                utcOffsetMinutes = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow).TotalMinutes,
             };
 
             try
