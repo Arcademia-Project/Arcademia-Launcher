@@ -2,6 +2,7 @@
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -15,7 +16,7 @@ namespace ArcademiaGameLauncher.Services
     {
         Task PlayAsync(string fileUrl, CancellationToken ct = default);
         Task PlayRandomPeriodicAsync(CancellationToken ct = default);
-        void PlayFile(string path, float volume = 1f);
+        void PlayEmbedded(string resourceName, float volume = 1f);
     }
 
     public sealed class SfxPlayer(IApiClient apiClient, ILogger<SfxPlayer> log) : ISfxPlayer
@@ -93,17 +94,25 @@ namespace ArcademiaGameLauncher.Services
             }
         }
 
-        public void PlayFile(string path, float volume = 1f)
+        public void PlayEmbedded(string resourceName, float volume = 1f)
         {
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            if (string.IsNullOrWhiteSpace(resourceName))
                 return;
 
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    using var ms = new MemoryStream(await File.ReadAllBytesAsync(path));
-                    using var reader = CreateReaderFor(path, null, ms);
+                    await using var resource = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
+                    if (resource is null)
+                    {
+                        _log.LogWarning("[Audio] Embedded sound '{Resource}' not found", resourceName);
+                        return;
+                    }
+                    using var ms = new MemoryStream();
+                    await resource.CopyToAsync(ms);
+                    ms.Position = 0;
+                    using var reader = CreateReaderFor(resourceName, null, ms);
                     using var output = new WaveOutEvent();
                     output.Init(new VolumeSampleProvider(reader.ToSampleProvider()) { Volume = Math.Clamp(volume, 0f, 1f) });
                     output.Play();
@@ -112,7 +121,7 @@ namespace ArcademiaGameLauncher.Services
                 }
                 catch (Exception ex)
                 {
-                    _log.LogError(ex, "[Audio] Failed to play '{Path}'", path);
+                    _log.LogError(ex, "[Audio] Failed to play '{Resource}'", resourceName);
                 }
             });
         }

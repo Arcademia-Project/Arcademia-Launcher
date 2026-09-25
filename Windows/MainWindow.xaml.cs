@@ -1999,13 +1999,9 @@ namespace ArcademiaGameLauncher.Windows
         {
             try
             {
-                var file = SeasonalSound.Resolve(
-                    Path.Combine(AppContext.BaseDirectory, "Assets", "Sounds"),
-                    "Achievement",
-                    DateTime.Now
-                );
-                if (file is not null)
-                    _sfxPlayer.PlayFile(file, AchievementSoundVolume);
+                var resource = SeasonalSound.Resolve("Achievement", DateTime.Now);
+                if (resource is not null)
+                    _sfxPlayer.PlayEmbedded(resource, AchievementSoundVolume);
             }
             catch (Exception ex)
             {

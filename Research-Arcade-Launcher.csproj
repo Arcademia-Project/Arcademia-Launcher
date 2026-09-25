@@ -94,9 +94,7 @@
     </Resource>
     <Resource Include="Assets\Images\ToastLogoTop.png" />
     <Resource Include="Assets\Images\ToastLogoBottom.png" />
-    <Content Include="Assets\Sounds\**">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <EmbeddedResource Include="Assets\Sounds\**" />
     <EmbeddedResource Include="Assets\json\ButtonConfig.json" />
     <EmbeddedResource Include="Assets\json\Credits.json" />
     <EmbeddedResource Include="Assets\json\emojis.json" />

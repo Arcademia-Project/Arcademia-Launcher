@@ -1,6 +1,6 @@
 using System;
-using System.IO;
 using System.Linq;
+using System.Reflection;
 
 namespace ArcademiaGameLauncher.Utils
 {
@@ -16,18 +16,21 @@ namespace ArcademiaGameLauncher.Utils
                 _ => null,
             };
 
-        public static string Resolve(string folder, string baseName, DateTime localDate)
-        {
-            if (!Directory.Exists(folder))
-                return null;
+        private const string ResourcePrefix = "ArcademiaGameLauncher.Assets.Sounds.";
 
+        private static readonly Lazy<string[]> ResourceNames = new(() =>
+            Assembly.GetExecutingAssembly().GetManifestResourceNames()
+        );
+
+        public static string Resolve(string baseName, DateTime localDate)
+        {
             var season = SeasonFor(localDate);
-            return (season is null ? null : Find(folder, baseName + "_" + season)) ?? Find(folder, baseName);
+            return (season is null ? null : Find(baseName + "_" + season)) ?? Find(baseName);
         }
 
-        private static string Find(string folder, string name) =>
+        private static string Find(string name) =>
             Extensions
-                .Select(ext => Path.Combine(folder, name + ext))
-                .FirstOrDefault(File.Exists);
+                .Select(ext => ResourcePrefix + name + ext)
+                .FirstOrDefault(candidate => ResourceNames.Value.Contains(candidate, StringComparer.OrdinalIgnoreCase));
     }
 }
