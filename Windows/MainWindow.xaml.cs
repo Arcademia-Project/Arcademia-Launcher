@@ -148,12 +148,22 @@ namespace ArcademiaGameLauncher.Windows
         private readonly Socket _socket;
 
         // MAIN WINDOW
-
         private readonly IDispatcherQueueService _dispatcherQueue;
         private readonly IApiClient _apiClient;
         private readonly ISessionTrackingService _sessionTracking;
         private readonly ISdkBrokerService _sdkBroker;
         private readonly IClaimCoordinator _claimCoordinator;
+        private readonly IAchievementSessionService _achievementSession;
+        private readonly IAchievementOverlayCoordinator _achievementOverlay;
+        private readonly ISessionClaimCoordinator _sessionClaims;
+        private readonly IAchievementCache _achievementCache;
+
+        private readonly AchievementToastWindow _toastWindow;
+        private readonly AchievementsOverlayWindow _overlayWindow;
+        private readonly SessionClaimWindow _sessionClaimWindow;
+        private DateTime _sessionClaimShownAt;
+        private int _overlayScrollCooldown;
+        private bool _overlayScrollHeld;
 
         public MainWindow(
             ILogger<MainWindow> logger,
@@ -164,6 +174,10 @@ namespace ArcademiaGameLauncher.Windows
             ISessionTrackingService sessionTracking,
             ISdkBrokerService sdkBroker,
             IClaimCoordinator claimCoordinator,
+            IAchievementSessionService achievementSession,
+            IAchievementOverlayCoordinator achievementOverlay,
+            ISessionClaimCoordinator sessionClaims,
+            IAchievementCache achievementCache,
             JObject config,
             string applicationPath,
             ILoggerFactory loggerFactory
@@ -177,6 +191,10 @@ namespace ArcademiaGameLauncher.Windows
             _sessionTracking = sessionTracking;
             _sdkBroker = sdkBroker;
             _claimCoordinator = claimCoordinator;
+            _achievementSession = achievementSession;
+            _achievementOverlay = achievementOverlay;
+            _sessionClaims = sessionClaims;
+            _achievementCache = achievementCache;
             _config = config;
             _applicationPath = applicationPath;
 
@@ -224,6 +242,51 @@ namespace ArcademiaGameLauncher.Windows
             _claimCoordinator.ClaimTick += ClaimCoordinator_ClaimTick;
             _claimCoordinator.ClaimHidden += ClaimCoordinator_ClaimHidden;
 
+            _toastWindow = new AchievementToastWindow(GetGameWindowHandle, PlayAchievementSound);
+            _overlayWindow = new AchievementsOverlayWindow(GetGameWindowHandle);
+            _sessionClaimWindow = new SessionClaimWindow();
+
+            _achievementSession.ToastRequested += toast =>
+                Dispatcher?.InvokeAsync(() => _toastWindow.Enqueue(toast));
+
+            _achievementOverlay.OpenRequested += snapshot =>
+                Dispatcher?.InvokeAsync(() =>
+                {
+                    _afkTimer = 0;
+                    _overlayWindow.ShowSnapshot(snapshot);
+                    ApplyWindowZOrder();
+                });
+            _achievementOverlay.CloseRequested += () =>
+                Dispatcher?.InvokeAsync(() =>
+                {
+                    _overlayWindow.HideOverlay();
+                    _afkTimer = 0;
+                    ApplyWindowZOrder();
+                });
+
+            _sessionClaims.Shown += (offer, url, expiresAt, online) =>
+                Dispatcher?.InvokeAsync(() =>
+                {
+                    _sessionClaimShownAt = DateTime.UtcNow;
+                    _afkTimer = 0;
+                    _sessionClaimWindow.ShowOffer(offer, url, this);
+                    ApplyWindowZOrder();
+                });
+            _sessionClaims.Tick += remaining =>
+                Dispatcher?.InvokeAsync(() => _sessionClaimWindow.UpdateCountdown(remaining));
+            _sessionClaims.OnlineChanged += online =>
+                Dispatcher?.InvokeAsync(() => _sessionClaimWindow.SetOnline(online));
+            _sessionClaims.Claimed += claimedBy =>
+                Dispatcher?.InvokeAsync(() => _sessionClaimWindow.ShowClaimed(claimedBy));
+            _sessionClaims.Hidden += () =>
+                Dispatcher?.InvokeAsync(() =>
+                {
+                    _sessionClaimWindow.HideOffer();
+                    _afkTimer = 0;
+                    _timeSinceLastButton = 0;
+                    ApplyWindowZOrder();
+                });
+
             InitializeComponent();
 
             // Setup Input Joysticks
@@ -259,7 +322,7 @@ namespace ArcademiaGameLauncher.Windows
             if (_config != null && _config.ContainsKey("NoInputTimeout_ms"))
                 _noInputTimeout = _config.ContainsKey("NoInputTimeout_ms")
                     ? int.Parse(_config["NoInputTimeout_ms"].ToString())
-                    : 120000; // Default to 2 minutes if not set in config
+                    : 120000;
 
             // Create the games directory if it doesn't exist
             if (!Directory.Exists(_gameDirectoryPath))
@@ -278,6 +341,7 @@ namespace ArcademiaGameLauncher.Windows
                 _sfxPlayer,
                 _sessionTracking,
                 _claimCoordinator,
+                _sessionClaims,
                 loggerFactory.CreateLogger<Socket>()
             );
             _ = _socket.SafeReportStatus("Idle");
@@ -412,8 +476,6 @@ namespace ArcademiaGameLauncher.Windows
                 GameImage14,
             ];
 
-            // Fall back to the placeholder for a tile if its thumbnail fails to load
-            // (e.g. the backend is unreachable), instead of leaving a broken image
             for (int tileIndex = 0; tileIndex < _gameImagesList.Length; tileIndex++)
             {
                 var capturedTileImage = _gameImagesList[tileIndex];
@@ -524,7 +586,7 @@ namespace ArcademiaGameLauncher.Windows
 
                 while (true)
                 {
-                    await Task.Delay(30 * 60 * 1000); // 30 Minutes
+                    await Task.Delay(30 * 60 * 1000);
                     try
                     {
                         _logger.LogInformation("[Updater Loop] Starting scheduled update check...");
@@ -719,8 +781,6 @@ namespace ArcademiaGameLauncher.Windows
             if (_gameInfoList == null || _gameInfoList.Length == 0)
                 return;
 
-            // GameDatabase.json does not store an Id field, but ThumbnailUrl contains
-            // the full API thumbnail URL for games that have one uploaded.
             var urls = new List<string>(_gameInfoList.Length);
             foreach (var game in _gameInfoList)
             {
@@ -830,7 +890,6 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // Updater Methods
-
         public async Task CheckForUpdaterUpdates() =>
             await _updater.CheckUpdaterAndUpdateAsync(CancellationToken.None);
 
@@ -893,7 +952,6 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // Custom TextBlock Buttons
-
         private void GameLibraryButton_Click(object sender, RoutedEventArgs e)
         {
             _activeCollectionInfo = null;
@@ -1109,7 +1167,6 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // ToggleButton Methods
-
         private void BackFromGameLibraryButton_Click(object sender, RoutedEventArgs e)
         {
             bool returnToCollections = _selectionMenuEnteredViaCollection;
@@ -1217,7 +1274,6 @@ namespace ArcademiaGameLauncher.Windows
             // Start the game if the game executable exists and the launcher is ready
             if (File.Exists(currentGameExe))
             {
-                // Create a new ProcessStartInfo object and set the Working Directory to the game directory
                 ProcessStartInfo startInfo = new(currentGameExe)
                 {
                     WorkingDirectory = Path.Combine(_gameDirectoryPath, currentGameFolder),
@@ -1231,6 +1287,19 @@ namespace ArcademiaGameLauncher.Windows
                     startInfo.Environment[SdkBrokerService.NonceVariable] = sdkEnvironment.Nonce;
                     startInfo.Environment[SdkBrokerService.SessionVariable] =
                         sdkEnvironment.SessionId;
+
+                    if (File.Exists(Path.Combine(startInfo.WorkingDirectory, "UnityPlayer.dll")))
+                    {
+                        startInfo.ArgumentList.Add("-window-mode");
+                        startInfo.ArgumentList.Add("borderless");
+                    }
+
+                    var launchingGame = _currentGameWorkingList[_currentlySelectedGameIndex];
+                    _achievementSession.BeginSession(
+                        sdkSessionId,
+                        (int)launchingGame["Id"],
+                        launchingGame["Name"]?.ToString()
+                    );
 
                     Process startedProcess;
                     try
@@ -1286,7 +1355,6 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // Event Handlers
-
         public void Key_Pressed()
         {
             // Keylogger for AFK Timer
@@ -1347,7 +1415,6 @@ namespace ArcademiaGameLauncher.Windows
 
             if (_infoWindow != null)
             {
-                // _infoWindow.Owner = this; // Commented out to allow the Game window to be between InfoWindow and Launcher
             }
         }
 
@@ -1526,6 +1593,9 @@ namespace ArcademiaGameLauncher.Windows
                 _currentStep = "AFK Check";
                 HandleAFKCheck();
 
+                _currentStep = "Overlay Input";
+                HandleOverlayInput(frameMs);
+
                 _currentStep = "UI Animations";
                 AnimateUI(frameMs);
 
@@ -1684,6 +1754,17 @@ namespace ArcademiaGameLauncher.Windows
                     WindowHelper.SetWindowOrder(gameHandle, infoHandle, launcherHandle);
                 else
                     WindowHelper.SetWindowOrder(launcherHandle, infoHandle, IntPtr.Zero);
+
+                Dispatcher?.InvokeAsync(
+                    () =>
+                    {
+                        if (_overlayWindow.IsOpen)
+                            _overlayWindow.KeepOnTop();
+                        if (_sessionClaimWindow.IsOpen)
+                            _sessionClaimWindow.KeepOnTop();
+                    },
+                    System.Windows.Threading.DispatcherPriority.Background
+                );
             });
         }
 
@@ -1759,6 +1840,23 @@ namespace ArcademiaGameLauncher.Windows
 
         private void HandleExitLogic()
         {
+            if (_overlayWindow.IsOpen)
+            {
+                if (_controllerManager.GetEitherButtonDownState(ControllerState.ControllerActions.Exit))
+                    _achievementOverlay.Close();
+                return;
+            }
+
+            if (_sessionClaimWindow.IsOpen)
+            {
+                if (
+                    DateTime.UtcNow - _sessionClaimShownAt > TimeSpan.FromSeconds(1)
+                    && _controllerManager.GetEitherButtonDownState(ControllerState.ControllerActions.Exit)
+                )
+                    _sessionClaims.Cancel();
+                return;
+            }
+
             if (_isClaimWindowVisible)
             {
                 if (
@@ -1812,6 +1910,7 @@ namespace ArcademiaGameLauncher.Windows
                             }
 
                             _ = _sessionTracking.EndSessionAsync("ForceExit");
+                            OfferSessionClaim("ForceExit");
                             _currentlyRunningProcess = null;
                             _ = _socket.SafeReportStatus("Idle");
 
@@ -1861,6 +1960,7 @@ namespace ArcademiaGameLauncher.Windows
                 ResetControllerStates();
                 _ = _socket.SafeReportStatus("Idle");
                 _ = _sessionTracking.EndSessionAsync("Natural");
+                OfferSessionClaim("Natural");
                 _currentlyRunningProcess = null;
 
                 ApplyWindowZOrder();
@@ -1877,9 +1977,88 @@ namespace ArcademiaGameLauncher.Windows
             }
         }
 
+        private IntPtr GetGameWindowHandle()
+        {
+            try
+            {
+                var process = _currentlyRunningProcess;
+                if (process is null || process.HasExited)
+                    return IntPtr.Zero;
+                process.Refresh();
+                return process.MainWindowHandle;
+            }
+            catch
+            {
+                return IntPtr.Zero;
+            }
+        }
+
+        private void PlayAchievementSound()
+        {
+            try
+            {
+                var folder = Path.Combine(AppContext.BaseDirectory, "Assets", "Sounds");
+                if (!Directory.Exists(folder))
+                    return;
+                var file = Directory
+                    .EnumerateFiles(folder, "Achievement.*")
+                    .FirstOrDefault(f =>
+                        f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)
+                        || f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)
+                        || f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase)
+                    );
+                if (file is not null)
+                    _sfxPlayer.PlayFile(file);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Achievements] Could not play the achievement sound");
+            }
+        }
+
+        private void OfferSessionClaim(string endReason)
+        {
+            var offer = _achievementSession.EndSession();
+            if (offer is null)
+                return;
+            if (endReason == "AFK")
+            {
+                _logger.LogInformation("[Achievements] Skipping the claim screen because the player went AFK");
+                return;
+            }
+            _ = Task.Run(() => _sessionClaims.OfferAsync(offer));
+        }
+
+        private void HandleOverlayInput(int frameMs)
+        {
+            if (!_overlayWindow.IsOpen)
+            {
+                _overlayScrollCooldown = 0;
+                _overlayScrollHeld = false;
+                return;
+            }
+
+            _afkTimer = 0;
+            var direction = _controllerManager.GetEitherLeftStickDirection()[1];
+            if (direction == 0)
+            {
+                _overlayScrollCooldown = 0;
+                _overlayScrollHeld = false;
+                return;
+            }
+
+            _overlayScrollCooldown -= frameMs;
+            if (_overlayScrollCooldown > 0)
+                return;
+
+            _overlayScrollCooldown = _overlayScrollHeld ? 110 : 350;
+            _overlayScrollHeld = true;
+            Dispatcher?.InvokeAsync(() => _overlayWindow.Scroll(direction));
+        }
+
         private void HandleAFKCheck()
         {
-            if (_isClaimWindowVisible)
+            if (_isClaimWindowVisible || _overlayWindow.IsOpen || _sessionClaimWindow.IsOpen || _sessionClaims.IsActive)
             {
                 _afkTimer = 0;
                 return;
@@ -1910,6 +2089,7 @@ namespace ArcademiaGameLauncher.Windows
                     }
                     catch { }
                     _ = _sessionTracking.EndSessionAsync("AFK");
+                    OfferSessionClaim("AFK");
                     _ = _socket.SafeReportStatus("Idle");
                     _currentlyRunningProcess = null;
                 }
@@ -2095,6 +2275,8 @@ namespace ArcademiaGameLauncher.Windows
         {
             _thumbnailCacheBuster = DateTime.Now.Ticks.ToString();
             SimplifiedGameInfo[] games = e.Games;
+            var achievementGameIds = games.Select(g => g.Id).ToList();
+            _ = Task.Run(() => _achievementCache.PrefetchAsync(achievementGameIds, CancellationToken.None));
 
             // Convert to JsonArray for local storage
             JArray gameInfoArray = [];
@@ -2142,8 +2324,6 @@ namespace ArcademiaGameLauncher.Windows
                 )
             );
 
-            // Update the gameInfoList with the new game info array
-            // Show the game titles as "Loading..." until the game database is updated
             try
             {
                 if (_logger.IsEnabled(LogLevel.Debug))
@@ -2193,8 +2373,6 @@ namespace ArcademiaGameLauncher.Windows
                     _logger.LogError(tcx, "[Updater] Updater_GameDatabaseFetched: Task Canceled");
             }
 
-            // Refresh the home screen thumbnail scroll with the latest ThumbnailUrls from the API.
-            // Clear the cache so newly-uploaded thumbnails are fetched fresh rather than stale.
             List<string> oldTempFiles;
             lock (_scrollCacheLock)
             {
@@ -2215,8 +2393,6 @@ namespace ArcademiaGameLauncher.Windows
                     freshUrls.Add(game.ThumbnailUrl);
             LoadHomeThumbnailScrollFromUrls(freshUrls);
 
-            // If the selection menu is already open, refresh the tile page so game names and
-            // thumbnails appear immediately instead of waiting for each update check to complete.
             if (_isSelectionMenuVisible)
                 Application.Current?.Dispatcher?.InvokeAsync(() =>
                 {
@@ -2405,7 +2581,6 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // Misc
-
         public void RestartLauncher() =>
             Dispatcher?.Invoke(() =>
             {
@@ -2417,7 +2592,6 @@ namespace ArcademiaGameLauncher.Windows
             });
 
         // Credits
-
         private const double CreditsScrollPixelsPerMs = 0.05;
 
         private void AutoScrollCredits(int frameMs)
@@ -2454,7 +2628,6 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // Getters & Setters
-
         private SolidColorBrush GetCurrentSelectionAnimationBrush() =>
             _selectionAnimationFrames[_selectionAnimationFrame];
 
@@ -2469,7 +2642,6 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // Update Methods
-
         private void UpdateCurrentSelection()
         {
             bool updatedIntervalCounter = false;
@@ -2478,7 +2650,9 @@ namespace ArcademiaGameLauncher.Windows
             if (_isInfoWindowVisible)
                 return;
 
-            // If theres a game running, don't listen for inputs
+            if (_sessionClaimWindow.IsOpen || _overlayWindow.IsOpen)
+                return;
+
             if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
                 return;
 
@@ -2528,7 +2702,7 @@ namespace ArcademiaGameLauncher.Windows
                         int maxIndex = _currentGameWorkingList.Length - 1;
 
                         if (_currentlySelectedGameIndex <= -1)
-                            _currentlySelectedGameIndex = -1; // Stay on Back
+                            _currentlySelectedGameIndex = -1;
                         else
                         {
                             int col = _currentlySelectedGameIndex % _gridColumns;
@@ -3250,7 +3424,6 @@ namespace ArcademiaGameLauncher.Windows
                             // Set the Game Description and Version
                             GameDescription.FitTextToTextBlock(
                                 desiredText: emojiParser.ReplaceColonNames(
-                                    // Make sure to replace \n with an actual newline character in the description
                                     game["Description"].ToString().Replace("\\n", "\n")
                                 ),
                                 targetFontSize: 14,
@@ -3280,13 +3453,13 @@ namespace ArcademiaGameLauncher.Windows
 
         private static readonly SolidColorBrush _fillChecking = new(
             Color.FromRgb(0xFF, 0xC1, 0x07)
-        ); // Amber
+        );
         private static readonly SolidColorBrush _fillDownloading = new(
             Color.FromRgb(0x4C, 0xAF, 0x50)
-        ); // Green
-        private static readonly SolidColorBrush _fillFailed = new(Color.FromRgb(0xF4, 0x43, 0x36)); // Red
-        private static readonly SolidColorBrush _fillActive = new(Color.FromRgb(0x21, 0x96, 0xF3)); // Blue
-        private static readonly SolidColorBrush _fillNeutral = new(Color.FromRgb(0x60, 0x7D, 0x8B)); // Blue-grey
+        );
+        private static readonly SolidColorBrush _fillFailed = new(Color.FromRgb(0xF4, 0x43, 0x36));
+        private static readonly SolidColorBrush _fillActive = new(Color.FromRgb(0x21, 0x96, 0xF3));
+        private static readonly SolidColorBrush _fillNeutral = new(Color.FromRgb(0x60, 0x7D, 0x8B));
 
         private void SetStartButtonFill(double scaleX, Brush brush)
         {
@@ -3391,7 +3564,6 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // Reset Methods
-
         private static readonly ScaleTransform s_collectionPlaceholderScale = CreateFrozenHalfScale();
 
         private static ScaleTransform CreateFrozenHalfScale()
@@ -3566,7 +3738,6 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // Debounce Update Game Info Display
-
         private void DebounceUpdateGameInfoDisplay()
         {
             if (_currentGameWorkingList == null)

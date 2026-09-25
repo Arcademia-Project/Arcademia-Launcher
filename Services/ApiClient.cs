@@ -78,6 +78,33 @@ namespace ArcademiaGameLauncher.Services
             string sessionId,
             CancellationToken cancellationToken
         );
+
+        Task<ScoreReadResult> GetAchievementGameAsync(
+            int gameId,
+            string sessionId,
+            CancellationToken cancellationToken
+        );
+
+        Task<AchievementUnlockResult> PostAchievementUnlockAsync(
+            SessionQueueItem item,
+            CancellationToken cancellationToken
+        );
+
+        Task<SessionClaimRegisterResult> RegisterSessionClaimAsync(
+            string sessionId,
+            string codeHash,
+            string shownAtUtc,
+            CancellationToken cancellationToken
+        );
+
+        Task<SessionClaimRegisterResult> GetSessionClaimStatusAsync(
+            string codeHash,
+            CancellationToken cancellationToken
+        );
+
+        Task CancelSessionClaimAsync(string codeHash, CancellationToken cancellationToken);
+
+        Task<byte[]> GetBytesAsync(string url, CancellationToken cancellationToken);
     }
 
     public class ApiClient(HttpClient http) : IApiClient
@@ -708,6 +735,184 @@ namespace ArcademiaGameLauncher.Services
                 when (ex is HttpRequestException or TaskCanceledException or JsonException)
             {
                 return new ScoreReadResult(ScorePostKind.Transient, null, ex.Message);
+            }
+        }
+        private static bool IsTransient(int status) => status is 401 or 408 or 429 || status >= 500;
+
+        private static string ReadString(JsonElement root, string name) =>
+            root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+
+        public async Task<ScoreReadResult> GetAchievementGameAsync(
+            int gameId,
+            string sessionId,
+            CancellationToken cancellationToken
+        )
+        {
+            try
+            {
+                var url = $"/api/Achievements/Machine/Games/{gameId}"
+                    + (string.IsNullOrEmpty(sessionId) ? "" : $"?sessionId={Uri.EscapeDataString(sessionId)}");
+                using var response = await _http.GetAsync(url, cancellationToken);
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    return new ScoreReadResult(ScorePostKind.Accepted, doc.RootElement.Clone(), null);
+                }
+
+                return new ScoreReadResult(
+                    IsTransient((int)response.StatusCode) ? ScorePostKind.Transient : ScorePostKind.Rejected,
+                    null,
+                    string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body
+                );
+            }
+            catch (Exception ex)
+                when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return new ScoreReadResult(ScorePostKind.Transient, null, ex.Message);
+            }
+        }
+
+        public async Task<AchievementUnlockResult> PostAchievementUnlockAsync(
+            SessionQueueItem item,
+            CancellationToken cancellationToken
+        )
+        {
+            var payload = new
+            {
+                unlockId = item.UnlockId,
+                sessionId = item.ExternalId,
+                apiKey = item.ApiKey,
+                apiName = item.ApiName,
+                achievedAt = item.AchievedAtUtc,
+            };
+
+            try
+            {
+                using var response = await _http.PostAsJsonAsync(
+                    "/api/Achievements/Machine/Unlocks",
+                    payload,
+                    cancellationToken
+                );
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                var status = (int)response.StatusCode;
+
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    var root = doc.RootElement;
+                    return new AchievementUnlockResult(
+                        AchievementPostKind.Accepted,
+                        ReadString(root, "status"),
+                        root.TryGetProperty("teamHadIt", out var had) && had.ValueKind == JsonValueKind.True,
+                        ReadString(root, "teamLabel"),
+                        ReadString(root, "teamClaimedBy"),
+                        null
+                    );
+                }
+
+                var message = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body;
+                var kind =
+                    IsTransient(status) ? AchievementPostKind.Transient
+                    : status == 404 && message.Contains("API name", StringComparison.OrdinalIgnoreCase)
+                        ? AchievementPostKind.Unknown
+                    : AchievementPostKind.Rejected;
+                return new AchievementUnlockResult(kind, null, false, null, null, message);
+            }
+            catch (Exception ex)
+                when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return new AchievementUnlockResult(AchievementPostKind.Transient, null, false, null, null, ex.Message);
+            }
+        }
+
+        private async Task<SessionClaimRegisterResult> SendSessionClaimAsync(
+            HttpMethod method,
+            string path,
+            object payload,
+            CancellationToken cancellationToken
+        )
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(payload) };
+                using var response = await _http.SendAsync(request, cancellationToken);
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    var root = doc.RootElement;
+                    return new SessionClaimRegisterResult(
+                        ClaimPostKind.Accepted,
+                        ReadString(root, "status"),
+                        ReadString(root, "claimedBy"),
+                        null
+                    );
+                }
+
+                return new SessionClaimRegisterResult(
+                    IsTransient((int)response.StatusCode) ? ClaimPostKind.Transient : ClaimPostKind.Rejected,
+                    null,
+                    null,
+                    string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body
+                );
+            }
+            catch (Exception ex)
+                when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return new SessionClaimRegisterResult(ClaimPostKind.Transient, null, null, ex.Message);
+            }
+        }
+
+        public Task<SessionClaimRegisterResult> RegisterSessionClaimAsync(
+            string sessionId,
+            string codeHash,
+            string shownAtUtc,
+            CancellationToken cancellationToken
+        ) =>
+            SendSessionClaimAsync(
+                HttpMethod.Post,
+                "/api/Achievements/Machine/Claims",
+                new { sessionId, codeHash, shownAt = shownAtUtc },
+                cancellationToken
+            );
+
+        public Task<SessionClaimRegisterResult> GetSessionClaimStatusAsync(
+            string codeHash,
+            CancellationToken cancellationToken
+        ) =>
+            SendSessionClaimAsync(
+                HttpMethod.Post,
+                "/api/Achievements/Machine/Claims/Status",
+                new { codeHash },
+                cancellationToken
+            );
+
+        public async Task CancelSessionClaimAsync(string codeHash, CancellationToken cancellationToken) =>
+            await SendSessionClaimAsync(
+                HttpMethod.Delete,
+                "/api/Achievements/Machine/Claims",
+                new { codeHash },
+                cancellationToken
+            );
+
+        public async Task<byte[]> GetBytesAsync(string url, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var response = await _http.GetAsync(url, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                    return null;
+                var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                return bytes.Length > 0 ? bytes : null;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                return null;
             }
         }
     }

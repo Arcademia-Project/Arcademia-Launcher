@@ -25,6 +25,18 @@ namespace ArcademiaGameLauncher.Services
         Task EndSessionAsync(string endReason);
         Task<ScoreOutcome> SubmitScoreAsync(ScoreRequest request);
         Task<ScoreNameOutcome> SetPlayerNameAsync(string scoreId, string playerName, string apiKey);
+        Task<(AchievementUnlockResult Result, bool Queued)> UnlockAchievementAsync(
+            string apiKey,
+            string apiName,
+            string unlockId,
+            DateTime achievedAtUtc
+        );
+        Task<(SessionClaimRegisterResult Result, bool Queued)> RegisterSessionClaimAsync(
+            string sessionId,
+            string codeHash,
+            DateTime shownAtUtc
+        );
+        Task<bool> RemoveQueuedSessionClaimAsync(string codeHash);
         Task FlushQueueAsync();
         Task RecoverCrashAsync();
     }
@@ -279,6 +291,133 @@ namespace ArcademiaGameLauncher.Services
             };
         }
 
+        private async Task<bool> IsQueueEmptyAsync()
+        {
+            await _lock.WaitAsync();
+            try
+            {
+                return LoadQueue().Count == 0;
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        public async Task<(AchievementUnlockResult Result, bool Queued)> UnlockAchievementAsync(
+            string apiKey,
+            string apiName,
+            string unlockId,
+            DateTime achievedAtUtc
+        )
+        {
+            var sessionId = _currentExternalId;
+            if (sessionId is null)
+                return (
+                    new AchievementUnlockResult(
+                        AchievementPostKind.Rejected,
+                        null,
+                        false,
+                        null,
+                        null,
+                        "No game session is active."
+                    ),
+                    false
+                );
+
+            var startCompletion = _startCompletion;
+            if (startCompletion is not null)
+                await Task.WhenAny(startCompletion.Task, Task.Delay(SessionStartWait));
+
+            var item = new SessionQueueItem
+            {
+                Type = "Achievement",
+                ExternalId = sessionId,
+                UnlockId = unlockId,
+                ApiName = apiName,
+                ApiKey = apiKey,
+                AchievedAtUtc = achievedAtUtc.ToString("o"),
+                QueuedAtUtc = DateTime.UtcNow.ToString("o"),
+            };
+
+            var queueEmpty = await IsQueueEmptyAsync();
+            if (queueEmpty)
+            {
+                using var cts = new CancellationTokenSource(ScoreSendTimeout);
+                var result = await _api.PostAchievementUnlockAsync(item, cts.Token);
+                if (result.Kind != AchievementPostKind.Transient)
+                    return (result, false);
+
+                _logger.LogWarning(
+                    "[Session] Achievement {ApiName} could not be sent, queueing: {Message}",
+                    apiName,
+                    result.Message
+                );
+            }
+
+            await EnqueueAsync(item);
+            if (!queueEmpty)
+                _ = Task.Run(FlushQueueAsync);
+
+            return (
+                new AchievementUnlockResult(AchievementPostKind.Transient, "unlocked", false, null, null, null),
+                true
+            );
+        }
+
+        public async Task<(SessionClaimRegisterResult Result, bool Queued)> RegisterSessionClaimAsync(
+            string sessionId,
+            string codeHash,
+            DateTime shownAtUtc
+        )
+        {
+            var item = new SessionQueueItem
+            {
+                Type = "SessionClaim",
+                ExternalId = sessionId,
+                CodeHash = codeHash,
+                ShownAtUtc = shownAtUtc.ToString("o"),
+                QueuedAtUtc = DateTime.UtcNow.ToString("o"),
+            };
+
+            var queueEmpty = await IsQueueEmptyAsync();
+            if (queueEmpty)
+            {
+                using var cts = new CancellationTokenSource(ScoreSendTimeout);
+                var result = await _api.RegisterSessionClaimAsync(
+                    sessionId,
+                    codeHash,
+                    item.ShownAtUtc,
+                    cts.Token
+                );
+                if (result.Kind != ClaimPostKind.Transient)
+                    return (result, false);
+            }
+
+            await EnqueueAsync(item);
+            if (!queueEmpty)
+                _ = Task.Run(FlushQueueAsync);
+
+            return (new SessionClaimRegisterResult(ClaimPostKind.Transient, "pending", null, null), true);
+        }
+
+        public async Task<bool> RemoveQueuedSessionClaimAsync(string codeHash)
+        {
+            await _lock.WaitAsync();
+            try
+            {
+                var items = LoadQueue();
+                var removed = items.RemoveAll(i => i.Type == "SessionClaim" && i.CodeHash == codeHash);
+                if (removed > 0)
+                    SaveQueue(items);
+                return removed > 0;
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
         public async Task FlushQueueAsync()
         {
             await _lock.WaitAsync();
@@ -336,6 +475,40 @@ namespace ArcademiaGameLauncher.Services
                                 );
                             sent = true;
                         }
+                        else if (item.Type == "Achievement" && !string.IsNullOrEmpty(item.ApiName))
+                        {
+                            using var cts = new CancellationTokenSource(ScoreSendTimeout);
+                            var result = await _api.PostAchievementUnlockAsync(item, cts.Token);
+                            if (result.Kind == AchievementPostKind.Transient)
+                                throw new InvalidOperationException(result.Message);
+
+                            if (result.Kind != AchievementPostKind.Accepted)
+                                _logger.LogWarning(
+                                    "[Session] Dropping rejected queued achievement {ApiName}: {Message}",
+                                    item.ApiName,
+                                    result.Message
+                                );
+                            sent = true;
+                        }
+                        else if (item.Type == "SessionClaim" && !string.IsNullOrEmpty(item.CodeHash))
+                        {
+                            using var cts = new CancellationTokenSource(ScoreSendTimeout);
+                            var result = await _api.RegisterSessionClaimAsync(
+                                item.ExternalId,
+                                item.CodeHash,
+                                item.ShownAtUtc,
+                                cts.Token
+                            );
+                            if (result.Kind == ClaimPostKind.Transient)
+                                throw new InvalidOperationException(result.Message);
+
+                            _logger.LogInformation(
+                                "[Session] Registered queued session claim for {ExternalId}: {Status}",
+                                item.ExternalId,
+                                result.Status ?? result.Message
+                            );
+                            sent = true;
+                        }
                         else
                         {
                             _logger.LogWarning(
@@ -343,7 +516,7 @@ namespace ArcademiaGameLauncher.Services
                                 item.ExternalId,
                                 item.Type
                             );
-                            sent = true; // drop malformed items
+                            sent = true;
                         }
                     }
                     catch (Exception ex)

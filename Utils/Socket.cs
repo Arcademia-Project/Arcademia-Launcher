@@ -16,6 +16,7 @@ namespace ArcademiaGameLauncher.Utils
         private readonly ISfxPlayer _sfxPlayer;
         private readonly ISessionTrackingService _sessionTracking;
         private readonly IClaimCoordinator _claims;
+        private readonly ISessionClaimCoordinator _sessionClaims;
         private readonly HubConnection _hub;
         private readonly CancellationTokenSource _heartbeatCts = new();
         private readonly ILogger<Socket> _logger;
@@ -32,9 +33,11 @@ namespace ArcademiaGameLauncher.Utils
             ISfxPlayer sfxPlayer,
             ISessionTrackingService sessionTracking,
             IClaimCoordinator claims,
+            ISessionClaimCoordinator sessionClaims,
             ILogger<Socket> logger
         )
         {
+            _sessionClaims = sessionClaims;
             _mainWindow = mainWindow;
             _sfxPlayer = sfxPlayer;
             _sessionTracking = sessionTracking;
@@ -248,6 +251,15 @@ namespace ArcademiaGameLauncher.Utils
                 {
                     _logger.LogInformation("[SignalR] Received ScoreClaimed: {ScoreId}", scoreId);
                     _claims.OnScoreClaimed(scoreId);
+                }
+            );
+
+            _hub.On<string>(
+                "SessionClaimed",
+                sessionId =>
+                {
+                    _logger.LogInformation("[SignalR] Received SessionClaimed: {SessionId}", sessionId);
+                    _sessionClaims.OnSessionClaimed(sessionId);
                 }
             );
 

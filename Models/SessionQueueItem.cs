@@ -21,6 +21,12 @@ namespace ArcademiaGameLauncher.Models
         public string ApiKey { get; set; }
         public string AchievedAtUtc { get; set; }
 
+        public string UnlockId { get; set; }
+        public string ApiName { get; set; }
+
+        public string CodeHash { get; set; }
+        public string ShownAtUtc { get; set; }
+
         public string QueuedAtUtc { get; set; } = null!;
         public int AttemptCount { get; set; }
     }

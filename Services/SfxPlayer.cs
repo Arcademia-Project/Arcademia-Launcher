@@ -14,6 +14,7 @@ namespace ArcademiaGameLauncher.Services
     {
         Task PlayAsync(string fileUrl, CancellationToken ct = default);
         Task PlayRandomPeriodicAsync(CancellationToken ct = default);
+        void PlayFile(string path);
     }
 
     public sealed class SfxPlayer(IApiClient apiClient, ILogger<SfxPlayer> log) : ISfxPlayer
@@ -78,7 +79,6 @@ namespace ArcademiaGameLauncher.Services
                 while (output.PlaybackState == PlaybackState.Playing && !ct.IsCancellationRequested)
                     await Task.Delay(100, ct).ConfigureAwait(false);
 
-                // If cancelled mid-play, stop gracefully
                 if (ct.IsCancellationRequested && output.PlaybackState == PlaybackState.Playing)
                     output.Stop();
             }
@@ -92,6 +92,30 @@ namespace ArcademiaGameLauncher.Services
                 if (_log.IsEnabled(LogLevel.Error))
                     _log.LogError(ex, "[Audio] Failed to play '{Url}'", fileUrl);
             }
+        }
+
+        public void PlayFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                return;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var ms = new MemoryStream(await File.ReadAllBytesAsync(path));
+                    using var reader = CreateReaderFor(path, null, ms);
+                    using var output = new WaveOutEvent();
+                    output.Init(reader);
+                    output.Play();
+                    while (output.PlaybackState == PlaybackState.Playing)
+                        await Task.Delay(100);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "[Audio] Failed to play '{Path}'", path);
+                }
+            });
         }
 
         public Task PlayRandomPeriodicAsync(CancellationToken ct = default) =>
@@ -127,8 +151,6 @@ namespace ArcademiaGameLauncher.Services
 
         private static WaveStream CreateReaderFor(string url, string contentType, Stream stream)
         {
-            // Check if the fileURL is
-
             if (
                 url.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)
                 || contentType == "audio/wav"
