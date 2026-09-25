@@ -108,6 +108,14 @@ namespace ArcademiaGameLauncher
                         sp.GetRequiredService<ILogger<SessionTrackingService>>()
                     ));
                     services.AddSingleton<IClaimCoordinator, ClaimCoordinator>();
+                    services.AddSingleton<IAchievementCache>(sp => new AchievementCache(
+                        applicationPath,
+                        sp.GetRequiredService<IApiClient>(),
+                        sp.GetRequiredService<ILogger<AchievementCache>>()
+                    ));
+                    services.AddSingleton<IAchievementSessionService, AchievementSessionService>();
+                    services.AddSingleton<IAchievementOverlayCoordinator, AchievementOverlayCoordinator>();
+                    services.AddSingleton<ISessionClaimCoordinator, SessionClaimCoordinator>();
                     services.AddSingleton<ISdkBrokerService, SdkBrokerService>();
 
                     services.AddSingleton<Windows.MainWindow>();

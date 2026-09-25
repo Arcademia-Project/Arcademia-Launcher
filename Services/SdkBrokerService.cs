@@ -1,5 +1,7 @@
 using System;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.IO.Pipes;
 using System.Security.Cryptography;
 using System.Text;
@@ -27,6 +29,7 @@ namespace ArcademiaGameLauncher.Services
         public const string SessionVariable = "ARCADEMIA_SESSION_ID";
 
         private const int MaxRequestChars = 16 * 1024;
+        private const int MaxConnections = 4;
 
         private static readonly JsonSerializerOptions ResponseOptions = new()
         {
@@ -37,6 +40,8 @@ namespace ArcademiaGameLauncher.Services
         private readonly ISessionTrackingService _session;
         private readonly IClaimCoordinator _claims;
         private readonly IApiClient _api;
+        private readonly IAchievementSessionService _achievements;
+        private readonly IAchievementOverlayCoordinator _overlay;
         private readonly ILogger<SdkBrokerService> _logger;
         private readonly object _gate = new();
 
@@ -46,12 +51,16 @@ namespace ArcademiaGameLauncher.Services
             ISessionTrackingService session,
             IClaimCoordinator claims,
             IApiClient api,
+            IAchievementSessionService achievements,
+            IAchievementOverlayCoordinator overlay,
             ILogger<SdkBrokerService> logger
         )
         {
             _session = session;
             _claims = claims;
             _api = api;
+            _achievements = achievements;
+            _overlay = overlay;
             _logger = logger;
             _session.SessionEnded += Stop;
         }
@@ -70,7 +79,8 @@ namespace ArcademiaGameLauncher.Services
             lock (_gate)
                 _cts = cts;
 
-            _ = Task.Run(() => RunAsync(environment, cts.Token));
+            for (var i = 0; i < MaxConnections; i++)
+                _ = Task.Run(() => RunAsync(environment, cts.Token));
             _logger.LogInformation("[SDK] Broker listening for session {SessionId}", sessionId);
             return environment;
         }
@@ -114,7 +124,7 @@ namespace ArcademiaGameLauncher.Services
                     await using var server = new NamedPipeServerStream(
                         environment.PipeName,
                         PipeDirection.InOut,
-                        1,
+                        MaxConnections,
                         PipeTransmissionMode.Byte,
                         PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly
                     );
@@ -204,6 +214,16 @@ namespace ArcademiaGameLauncher.Services
                     case "getScores":
                         return await HandleGetScoresAsync(id, root, environment);
 
+                    case "achievementsHello":
+                    case "getAchievements":
+                        return await HandleGetAchievementsAsync(id, environment);
+
+                    case "unlockAchievement":
+                        return await HandleUnlockAchievementAsync(id, root);
+
+                    case "openAchievements":
+                        return await HandleOpenAchievementsAsync(id);
+
                     default:
                         return Error(id, "unknown_op", "Unknown operation.");
                 }
@@ -264,6 +284,8 @@ namespace ArcademiaGameLauncher.Services
             var outcome = await _session.SubmitScoreAsync(
                 new ScoreRequest(boardSlug, value, playerName, scoreId, metadataJson, apiKey)
             );
+            if (outcome.Status is "submitted" or "queued")
+                _achievements.RecordScoreSubmitted(outcome.ScoreId);
 
             return Serialize(
                 new
@@ -294,6 +316,8 @@ namespace ArcademiaGameLauncher.Services
                 apiKey,
                 CancellationToken.None
             );
+            if (outcome.Status == "saved")
+                _achievements.RecordScoreClaimed(targetScoreId);
 
             return Serialize(
                 new
@@ -391,6 +415,145 @@ namespace ArcademiaGameLauncher.Services
                 writer.WriteEndObject();
             }
             return Encoding.UTF8.GetString(buffer.ToArray());
+        }
+
+        private static object AchievementJson(CachedAchievement a) =>
+            a is null
+                ? null
+                : new
+                {
+                    apiName = a.ApiName,
+                    name = a.Name,
+                    description = a.Description,
+                    iconUrl = a.IconUrl,
+                    iconPath = a.IconPath,
+                    hidden = a.Hidden,
+                    allowPersonal = a.AllowPersonal,
+                    sortOrder = a.SortOrder,
+                };
+
+        private async Task<string> HandleGetAchievementsAsync(string id, SdkSessionEnvironment environment)
+        {
+            var snapshot = await _achievements.GetSnapshotAsync();
+            var set = snapshot.Set;
+            if (set is null)
+                return Error(id, "offline", "Achievements for this game have not been downloaded yet.");
+            if (!set.Enabled)
+                return Error(id, "disabled", "Achievements are not enabled for this game.");
+
+            return Serialize(
+                new
+                {
+                    id,
+                    ok = true,
+                    mode = "launcher",
+                    sessionId = environment.SessionId,
+                    offline = snapshot.Offline ? (bool?)true : null,
+                    set = new
+                    {
+                        gameId = set.GameId,
+                        gameName = set.GameName,
+                        scope = set.Scope,
+                        teamKey = set.TeamKey,
+                        teamLabel = set.TeamLabel,
+                        achievements = set.Achievements.OrderBy(a => a.SortOrder).Select(AchievementJson),
+                        teamHolds = set.TeamHolds.Select(h => new
+                        {
+                            apiName = h.ApiName,
+                            firstUnlockedAt = h.FirstUnlockedAt,
+                            claimedBy = h.ClaimedBy,
+                            claimedAt = h.ClaimedAt,
+                        }),
+                        unlockedThisSession = snapshot.UnlockedThisSession,
+                    },
+                }
+            );
+        }
+
+        private async Task<string> HandleUnlockAchievementAsync(string id, JsonElement root)
+        {
+            var apiKey = GetString(root, "apiKey");
+            var apiName = GetString(root, "apiName");
+
+            if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Length > 128)
+                return Error(id, "invalid_request", "apiKey is required.");
+            if (string.IsNullOrWhiteSpace(apiName) || apiName.Length > 64)
+                return Error(id, "invalid_request", "apiName is required.");
+
+            var unlockId = Guid.NewGuid();
+            var requestedId = GetString(root, "unlockId");
+            if (requestedId is not null && !Guid.TryParse(requestedId, out unlockId))
+                return Error(id, "invalid_request", "unlockId must be a GUID.");
+
+            var achievedAt = DateTime.UtcNow;
+            var requestedAt = GetString(root, "achievedAt");
+            if (
+                requestedAt is not null
+                && DateTime.TryParse(
+                    requestedAt,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out var parsed
+                )
+            )
+            {
+                var utc = parsed.ToUniversalTime();
+                if (Math.Abs((utc - achievedAt).TotalMinutes) < 5)
+                    achievedAt = utc;
+            }
+
+            var outcome = await _achievements.UnlockAsync(apiKey, apiName.Trim(), unlockId.ToString(), achievedAt);
+
+            if (!outcome.Ok)
+                return Serialize(
+                    new
+                    {
+                        id,
+                        ok = false,
+                        status = outcome.Status,
+                        error = outcome.Error,
+                        message = outcome.Message,
+                    }
+                );
+
+            return Serialize(
+                new
+                {
+                    id,
+                    ok = true,
+                    status = outcome.Status,
+                    offline = outcome.Offline ? (bool?)true : null,
+                    render = outcome.Render,
+                    unlock = new
+                    {
+                        status = outcome.Status,
+                        achievement = AchievementJson(outcome.Achievement),
+                        teamHadIt = outcome.TeamHadIt,
+                        teamLabel = outcome.TeamLabel,
+                        teamClaimedBy = outcome.TeamClaimedBy,
+                        scope = outcome.Scope,
+                        achievedAt = outcome.AchievedAtUtc == default
+                            ? null
+                            : outcome.AchievedAtUtc.ToString("o"),
+                    },
+                }
+            );
+        }
+
+        private async Task<string> HandleOpenAchievementsAsync(string id)
+        {
+            var result = await _overlay.OpenAsync();
+            return result switch
+            {
+                "game" => Serialize(new { id, ok = true, status = "renderInGame", render = "game" }),
+                "closed" => Serialize(new { id, ok = true, status = "closed" }),
+                _ => Error(id, result, result switch
+                {
+                    "alreadyOpen" => "The achievements overlay is already open.",
+                    "disabled" => "Achievements are not enabled for this game.",
+                    _ => "The achievements overlay could not be opened.",
+                }),
+            };
         }
 
         private static bool TryGetCount(JsonElement root, string name, out int value)

@@ -2,11 +2,13 @@
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NAudio.Vorbis;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 
 namespace ArcademiaGameLauncher.Services
 {
@@ -14,6 +16,7 @@ namespace ArcademiaGameLauncher.Services
     {
         Task PlayAsync(string fileUrl, CancellationToken ct = default);
         Task PlayRandomPeriodicAsync(CancellationToken ct = default);
+        void PlayEmbedded(string resourceName, float volume = 1f);
     }
 
     public sealed class SfxPlayer(IApiClient apiClient, ILogger<SfxPlayer> log) : ISfxPlayer
@@ -44,7 +47,6 @@ namespace ArcademiaGameLauncher.Services
                     .GetAsync(requestUri, HttpCompletionOption.ResponseHeadersRead, ct)
                     .ConfigureAwait(false);
 
-                // Handle unexpected redirect responses
                 if (IsRedirect(resp.StatusCode) && _log.IsEnabled(LogLevel.Warning))
                 {
                     _log.LogWarning(
@@ -56,7 +58,6 @@ namespace ArcademiaGameLauncher.Services
 
                 resp.EnsureSuccessStatusCode();
 
-                // Buffer to a seekable stream for NAudio
                 await using var net = await resp
                     .Content.ReadAsStreamAsync(ct)
                     .ConfigureAwait(false);
@@ -78,7 +79,6 @@ namespace ArcademiaGameLauncher.Services
                 while (output.PlaybackState == PlaybackState.Playing && !ct.IsCancellationRequested)
                     await Task.Delay(100, ct).ConfigureAwait(false);
 
-                // If cancelled mid-play, stop gracefully
                 if (ct.IsCancellationRequested && output.PlaybackState == PlaybackState.Playing)
                     output.Stop();
             }
@@ -92,6 +92,38 @@ namespace ArcademiaGameLauncher.Services
                 if (_log.IsEnabled(LogLevel.Error))
                     _log.LogError(ex, "[Audio] Failed to play '{Url}'", fileUrl);
             }
+        }
+
+        public void PlayEmbedded(string resourceName, float volume = 1f)
+        {
+            if (string.IsNullOrWhiteSpace(resourceName))
+                return;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await using var resource = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
+                    if (resource is null)
+                    {
+                        _log.LogWarning("[Audio] Embedded sound '{Resource}' not found", resourceName);
+                        return;
+                    }
+                    using var ms = new MemoryStream();
+                    await resource.CopyToAsync(ms);
+                    ms.Position = 0;
+                    using var reader = CreateReaderFor(resourceName, null, ms);
+                    using var output = new WaveOutEvent();
+                    output.Init(new VolumeSampleProvider(reader.ToSampleProvider()) { Volume = Math.Clamp(volume, 0f, 1f) });
+                    output.Play();
+                    while (output.PlaybackState == PlaybackState.Playing)
+                        await Task.Delay(100);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "[Audio] Failed to play '{Resource}'", resourceName);
+                }
+            });
         }
 
         public Task PlayRandomPeriodicAsync(CancellationToken ct = default) =>
@@ -127,8 +159,6 @@ namespace ArcademiaGameLauncher.Services
 
         private static WaveStream CreateReaderFor(string url, string contentType, Stream stream)
         {
-            // Check if the fileURL is
-
             if (
                 url.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)
                 || contentType == "audio/wav"
