@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NAudio.Vorbis;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 
 namespace ArcademiaGameLauncher.Services
 {
@@ -14,7 +15,7 @@ namespace ArcademiaGameLauncher.Services
     {
         Task PlayAsync(string fileUrl, CancellationToken ct = default);
         Task PlayRandomPeriodicAsync(CancellationToken ct = default);
-        void PlayFile(string path);
+        void PlayFile(string path, float volume = 1f);
     }
 
     public sealed class SfxPlayer(IApiClient apiClient, ILogger<SfxPlayer> log) : ISfxPlayer
@@ -45,7 +46,6 @@ namespace ArcademiaGameLauncher.Services
                     .GetAsync(requestUri, HttpCompletionOption.ResponseHeadersRead, ct)
                     .ConfigureAwait(false);
 
-                // Handle unexpected redirect responses
                 if (IsRedirect(resp.StatusCode) && _log.IsEnabled(LogLevel.Warning))
                 {
                     _log.LogWarning(
@@ -57,7 +57,6 @@ namespace ArcademiaGameLauncher.Services
 
                 resp.EnsureSuccessStatusCode();
 
-                // Buffer to a seekable stream for NAudio
                 await using var net = await resp
                     .Content.ReadAsStreamAsync(ct)
                     .ConfigureAwait(false);
@@ -94,7 +93,7 @@ namespace ArcademiaGameLauncher.Services
             }
         }
 
-        public void PlayFile(string path)
+        public void PlayFile(string path, float volume = 1f)
         {
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 return;
@@ -106,7 +105,7 @@ namespace ArcademiaGameLauncher.Services
                     using var ms = new MemoryStream(await File.ReadAllBytesAsync(path));
                     using var reader = CreateReaderFor(path, null, ms);
                     using var output = new WaveOutEvent();
-                    output.Init(reader);
+                    output.Init(new VolumeSampleProvider(reader.ToSampleProvider()) { Volume = Math.Clamp(volume, 0f, 1f) });
                     output.Play();
                     while (output.PlaybackState == PlaybackState.Playing)
                         await Task.Delay(100);

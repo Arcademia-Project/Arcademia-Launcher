@@ -1993,22 +1993,19 @@ namespace ArcademiaGameLauncher.Windows
             }
         }
 
+        private const float AchievementSoundVolume = 0.75f;
+
         private void PlayAchievementSound()
         {
             try
             {
-                var folder = Path.Combine(AppContext.BaseDirectory, "Assets", "Sounds");
-                if (!Directory.Exists(folder))
-                    return;
-                var file = Directory
-                    .EnumerateFiles(folder, "Achievement.*")
-                    .FirstOrDefault(f =>
-                        f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)
-                        || f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)
-                        || f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase)
-                    );
+                var file = SeasonalSound.Resolve(
+                    Path.Combine(AppContext.BaseDirectory, "Assets", "Sounds"),
+                    "Achievement",
+                    DateTime.Now
+                );
                 if (file is not null)
-                    _sfxPlayer.PlayFile(file);
+                    _sfxPlayer.PlayFile(file, AchievementSoundVolume);
             }
             catch (Exception ex)
             {
