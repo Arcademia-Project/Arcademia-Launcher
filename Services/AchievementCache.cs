@@ -170,7 +170,7 @@ namespace ArcademiaGameLauncher.Services
                                 sessionUnlocks.Add(name.GetString());
                 }
 
-                if (previous?.TeamKey == set.TeamKey)
+                if (previous is not null && previous.TeamKey == set.TeamKey)
                     foreach (var local in previous.TeamHolds)
                         if (
                             local.LocalOnly
