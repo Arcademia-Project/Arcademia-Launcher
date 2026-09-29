@@ -18,7 +18,10 @@ namespace ArcademiaGameLauncher.Services
 
         Task<ControllerMapping> GetControllerMappingAsync(CancellationToken cancellationToken);
         Task<Stream> GetSiteLogoAsync(CancellationToken cancellationToken);
-        Task<string> GetLatestUpdaterVersionAsync(ILogger<UpdaterService> _logger);
+        Task<string> GetLatestUpdaterVersionAsync(
+            string installedVersion,
+            ILogger<UpdaterService> _logger
+        );
         Task<Stream> GetUpdaterDownloadAsync(
             string versionNumber,
             CancellationToken cancellationToken
@@ -141,9 +144,14 @@ namespace ArcademiaGameLauncher.Services
             return await response.Content.ReadAsStreamAsync(cancellationToken);
         }
 
-        public async Task<string> GetLatestUpdaterVersionAsync(ILogger<UpdaterService> _logger)
+        public async Task<string> GetLatestUpdaterVersionAsync(
+            string installedVersion,
+            ILogger<UpdaterService> _logger
+        )
         {
-            var response = await _http.GetAsync("/api/UpdaterVersions/Latest");
+            var response = await _http.GetAsync(
+                $"/api/UpdaterVersions/Latest?currentVersion={Uri.EscapeDataString(installedVersion)}"
+            );
 
             if (!response.IsSuccessStatusCode)
             {

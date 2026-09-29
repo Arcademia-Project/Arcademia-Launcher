@@ -249,7 +249,7 @@ namespace ArcademiaGameLauncher.Services
                 if (!set.IsSessional)
                     _cache.RecordTeamHold(gameId, apiName, achievedAtUtc, null, offline);
 
-                var render = FullscreenDetector.IsExclusiveFullscreen() ? "game" : "launcher";
+                var render = FullscreenDetector.ShouldGameDraw() ? "game" : "launcher";
                 if (render == "launcher")
                     ToastRequested?.Invoke(new AchievementToast(
                         achievement.Name,

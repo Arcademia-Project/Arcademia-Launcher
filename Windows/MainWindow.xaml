@@ -17,7 +17,7 @@
         Height="{DynamicResource {x:Static SystemParameters.PrimaryScreenHeightKey}}">
     <!-- Declare the Launcher Version, Global Font and ToggleButton style -->
     <Window.Resources>
-        <System:String x:Key="LauncherVersion">[v2.9.2-26 Release Build]</System:String>
+        <System:String x:Key="LauncherVersion">[v2.9.4-26 Release Build]</System:String>
         <System:String x:Key="YearStyle">yyyy</System:String>
         <System:Double x:Key="LogicalSizeWidth">1920</System:Double>
         <System:Double x:Key="LogicalSizeHeight">1080</System:Double>
@@ -547,7 +547,7 @@
                     <Grid Grid.Row="5"
                           Margin="74,25">
                         <TextBlock x:Name="Copyright"
-                                   Text="Copyright ©️ 2018 - Now University of Lincoln, All rights reserved."
+                                   Text="Copyright ©️ 2018 - Now Arcademia, All rights reserved."
                                    Foreground="#777"
                                    FontSize="14"
                                    Style="{StaticResource Early GameBoy}"

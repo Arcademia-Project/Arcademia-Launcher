@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Windows;
@@ -17,11 +18,31 @@ namespace ArcademiaGameLauncher.Windows
         private const double PanelWidth = 920;
         private const double PanelHeight = 860;
         private const double RowHeight = 92;
-        private const double ScrollStep = RowHeight + 8;
+        private const double RowGap = 8;
+        private const double ListPadding = 4;
+        private static readonly TimeSpan ScrollDuration = TimeSpan.FromMilliseconds(180);
 
         private readonly Func<IntPtr> _gameWindow;
         private readonly Grid _root;
         private ScrollViewer _scroll;
+        private readonly List<Border> _rows = [];
+        private int _selected;
+        private Border _scrollTrack;
+        private Border _scrollThumb;
+        private TextBlock _counter;
+        private double _scrollFrom;
+        private double _scrollTarget;
+        private DateTime _scrollStart;
+        private bool _scrollAnimating;
+
+        private static readonly SolidColorBrush SelectedBorder = Freeze(new SolidColorBrush(AchievementVisuals.Color(0xC9A0FF)));
+        private static readonly SolidColorBrush UnselectedBorder = Freeze(new SolidColorBrush(Colors.Transparent));
+
+        private static SolidColorBrush Freeze(SolidColorBrush brush)
+        {
+            brush.Freeze();
+            return brush;
+        }
 
         public bool IsOpen { get; private set; }
 
@@ -35,7 +56,8 @@ namespace ArcademiaGameLauncher.Windows
             ShowInTaskbar = false;
             ShowActivated = false;
             Topmost = true;
-            Focusable = false;
+            Focusable = true;
+            Closing += (_, e) => e.Cancel = true;
             ResizeMode = ResizeMode.NoResize;
             Title = "Arcademia Achievements Overlay";
 
@@ -46,7 +68,7 @@ namespace ArcademiaGameLauncher.Windows
         protected override void OnSourceInitialized(EventArgs e)
         {
             base.OnSourceInitialized(e);
-            NativeWindows.MakeOverlay(new WindowInteropHelper(this).Handle, clickThrough: false);
+            NativeWindows.MakeOverlay(new WindowInteropHelper(this).Handle, clickThrough: false, activatable: true);
         }
 
         public void ShowSnapshot(AchievementSnapshot snapshot)
@@ -87,16 +109,130 @@ namespace ArcademiaGameLauncher.Windows
         {
             IsOpen = false;
             BeginAnimation(OpacityProperty, null);
+            StopScrollAnimation();
             Hide();
             _root.Children.Clear();
             _scroll = null;
+            _rows.Clear();
+            _scrollTrack = null;
+            _scrollThumb = null;
+            _counter = null;
         }
 
         public void Scroll(int direction)
         {
-            if (_scroll is null || direction == 0)
+            if (_scroll is null || direction == 0 || _rows.Count == 0)
                 return;
-            _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset + direction * ScrollStep);
+
+            var next = Math.Clamp(_selected + direction, 0, _rows.Count - 1);
+            if (next == _selected)
+                return;
+
+            Select(next);
+        }
+
+        private void Select(int index)
+        {
+            if (_selected >= 0 && _selected < _rows.Count)
+                _rows[_selected].BorderBrush = UnselectedBorder;
+
+            _selected = index;
+            _rows[index].BorderBrush = SelectedBorder;
+
+            if (_counter is not null)
+                _counter.Text = $"{index + 1} / {_rows.Count}";
+
+            if (_scroll is null)
+                return;
+
+            var rowTop = ListPadding + index * (RowHeight + RowGap);
+            var rowBottom = rowTop + RowHeight;
+            var margin = RowGap * 2;
+            var offset = _scrollAnimating ? _scrollTarget : _scroll.VerticalOffset;
+
+            if (index == 0)
+                AnimateScrollTo(0);
+            else if (index == _rows.Count - 1)
+                AnimateScrollTo(_scroll.ScrollableHeight);
+            else if (rowTop - margin < offset)
+                AnimateScrollTo(rowTop - margin);
+            else if (rowBottom + margin > offset + _scroll.ViewportHeight)
+                AnimateScrollTo(rowBottom + margin - _scroll.ViewportHeight);
+        }
+
+        private void AnimateScrollTo(double target)
+        {
+            if (_scroll is null)
+                return;
+
+            _scrollFrom = _scroll.VerticalOffset;
+            _scrollTarget = Math.Clamp(target, 0, _scroll.ScrollableHeight);
+            _scrollStart = DateTime.UtcNow;
+
+            if (!_scrollAnimating)
+            {
+                _scrollAnimating = true;
+                CompositionTarget.Rendering += OnScrollFrame;
+            }
+        }
+
+        private void OnScrollFrame(object sender, EventArgs e)
+        {
+            if (_scroll is null)
+            {
+                StopScrollAnimation();
+                return;
+            }
+
+            var progress = Math.Min(1, (DateTime.UtcNow - _scrollStart).TotalMilliseconds / ScrollDuration.TotalMilliseconds);
+            var eased = 1 - Math.Pow(1 - progress, 3);
+            _scroll.ScrollToVerticalOffset(_scrollFrom + (_scrollTarget - _scrollFrom) * eased);
+
+            if (progress >= 1)
+                StopScrollAnimation();
+        }
+
+        private void StopScrollAnimation()
+        {
+            if (!_scrollAnimating)
+                return;
+
+            _scrollAnimating = false;
+            CompositionTarget.Rendering -= OnScrollFrame;
+        }
+
+        private void UpdateScrollFeedback()
+        {
+            if (_scroll is null)
+                return;
+
+            var scrollable = _scroll.ScrollableHeight;
+            var offset = _scroll.VerticalOffset;
+            var moreAbove = offset > 0.5;
+            var moreBelow = offset < scrollable - 0.5;
+
+            var mask = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            mask.GradientStops.Add(new GradientStop(moreAbove ? Colors.Transparent : Colors.Black, 0));
+            mask.GradientStops.Add(new GradientStop(Colors.Black, 0.08));
+            mask.GradientStops.Add(new GradientStop(Colors.Black, 0.92));
+            mask.GradientStops.Add(new GradientStop(moreBelow ? Colors.Transparent : Colors.Black, 1));
+            mask.Freeze();
+            _scroll.OpacityMask = mask;
+
+            if (_scrollTrack is null || _scrollThumb is null)
+                return;
+
+            if (scrollable <= 0.5 || _scroll.ExtentHeight <= 0)
+            {
+                _scrollTrack.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            _scrollTrack.Visibility = Visibility.Visible;
+            var trackHeight = _scrollTrack.ActualHeight;
+            var thumbHeight = Math.Max(36, trackHeight * _scroll.ViewportHeight / _scroll.ExtentHeight);
+            _scrollThumb.Height = thumbHeight;
+            _scrollThumb.Margin = new Thickness(0, (trackHeight - thumbHeight) * offset / scrollable, 0, 0);
         }
 
         private static TextBlock Text(string value, double size, Color color, FontWeight weight, double top, double left = 36)
@@ -185,7 +321,10 @@ namespace ArcademiaGameLauncher.Windows
             track.Child = fill;
             body.Children.Add(track);
 
-            var list = new StackPanel { Margin = new Thickness(12, 4, 12, 12) };
+            _rows.Clear();
+            _selected = 0;
+
+            var list = new StackPanel { Margin = new Thickness(12, ListPadding, 20, 12) };
             if (rows.Count == 0)
                 list.Children.Add(new TextBlock
                 {
@@ -198,7 +337,11 @@ namespace ArcademiaGameLauncher.Windows
                 });
 
             foreach (var r in rows)
-                list.Children.Add(BuildRow(set, r.Achievement, r.Hold, r.ThisSession, r.Unlocked));
+            {
+                var row = BuildRow(set, r.Achievement, r.Hold, r.ThisSession, r.Unlocked);
+                _rows.Add(row);
+                list.Children.Add(row);
+            }
 
             _scroll = new ScrollViewer
             {
@@ -208,17 +351,48 @@ namespace ArcademiaGameLauncher.Windows
                 Margin = new Thickness(24, 150, 24, 70),
                 Focusable = false,
             };
+            _scroll.ScrollChanged += (_, _) => UpdateScrollFeedback();
             body.Children.Add(_scroll);
+
+            _scrollThumb = new Border
+            {
+                Width = 6,
+                VerticalAlignment = VerticalAlignment.Top,
+                CornerRadius = new CornerRadius(3),
+                Background = new SolidColorBrush(AchievementVisuals.Color(0xC9A0FF, 0.85)),
+            };
+            _scrollTrack = new Border
+            {
+                Width = 6,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 158, 22, 78),
+                CornerRadius = new CornerRadius(3),
+                Background = new SolidColorBrush(AchievementVisuals.Color(0x47384E)),
+                Visibility = Visibility.Collapsed,
+                Child = _scrollThumb,
+            };
+            _scrollTrack.SizeChanged += (_, _) => UpdateScrollFeedback();
+            body.Children.Add(_scrollTrack);
 
             var hint = Text("Press EXIT to close  ·  Up / Down to scroll", 15, AchievementVisuals.Color(0xA5ADB8), FontWeights.Normal, 0);
             hint.VerticalAlignment = VerticalAlignment.Bottom;
             hint.Margin = new Thickness(36, 0, 36, 26);
             body.Children.Add(hint);
 
+            if (_rows.Count > 0)
+            {
+                _counter = Text($"1 / {_rows.Count}", 15, AchievementVisuals.Color(0xC9A0FF), FontWeights.Bold, 0);
+                _counter.TextAlignment = TextAlignment.Right;
+                _counter.VerticalAlignment = VerticalAlignment.Bottom;
+                _counter.Margin = new Thickness(36, 0, 36, 26);
+                body.Children.Add(_counter);
+                _rows[0].BorderBrush = SelectedBorder;
+            }
+
             return shell;
         }
 
-        private static FrameworkElement BuildRow(
+        private static Border BuildRow(
             CachedAchievementSet set,
             CachedAchievement a,
             CachedTeamHold hold,
@@ -227,12 +401,7 @@ namespace ArcademiaGameLauncher.Windows
         )
         {
             var secret = a.Hidden && !unlocked;
-            var row = new Grid
-            {
-                Height = RowHeight,
-                Margin = new Thickness(0, 0, 0, 8),
-                Background = new SolidColorBrush(unlocked ? AchievementVisuals.Color(0x47384E) : AchievementVisuals.Color(0x291C30)),
-            };
+            var row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(92) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(250) });
@@ -317,7 +486,15 @@ namespace ArcademiaGameLauncher.Windows
             Grid.SetColumn(statusText, 2);
             row.Children.Add(statusText);
 
-            return row;
+            return new Border
+            {
+                Height = RowHeight,
+                Margin = new Thickness(0, 0, 0, RowGap),
+                BorderThickness = new Thickness(2),
+                BorderBrush = UnselectedBorder,
+                Background = new SolidColorBrush(unlocked ? AchievementVisuals.Color(0x47384E) : AchievementVisuals.Color(0x291C30)),
+                Child = row,
+            };
         }
 
         private static string TeamStatus(CachedAchievementSet set, CachedTeamHold hold)

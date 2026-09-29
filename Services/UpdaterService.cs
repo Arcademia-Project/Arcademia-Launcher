@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using ArcademiaGameLauncher.Models;
 using ICSharpCode.SharpZipLib.Zip;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json.Linq;
 
 namespace ArcademiaGameLauncher.Services
 {
@@ -193,7 +194,9 @@ namespace ArcademiaGameLauncher.Services
             Version latestVersion;
             try
             {
-                latestVersion = new(await _apiClient.GetLatestUpdaterVersionAsync(_logger));
+                latestVersion = new(
+                    await _apiClient.GetLatestUpdaterVersionAsync(ReadInstalledUpdaterVersion(), _logger)
+                );
             }
             catch (Exception)
             {
@@ -223,6 +226,7 @@ namespace ArcademiaGameLauncher.Services
             try
             {
                 SwapUpdaterFiles(stagingDir);
+                WriteInstalledUpdaterVersion(latestVersion.ToString());
                 installed = true;
                 _logger.LogInformation(
                     "[UpdaterService] Installed updater {VersionNumber}.",
@@ -479,6 +483,37 @@ namespace ArcademiaGameLauncher.Services
                 }
                 catch { }
             }
+        }
+
+        private string UpdaterVersionRecordPath => Path.Combine(_updaterDir, ".arcademia-updater.json");
+
+        private string ReadInstalledUpdaterVersion()
+        {
+            try
+            {
+                if (File.Exists(Path.Combine(_updaterDir, UpdaterExeName)) && File.Exists(UpdaterVersionRecordPath))
+                {
+                    var version = JObject.Parse(File.ReadAllText(UpdaterVersionRecordPath))["Version"]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(version))
+                        return version;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("[UpdaterService] Could not read the local updater version: {Message}", ex.Message);
+            }
+
+            return "0.0.0";
+        }
+
+        private void WriteInstalledUpdaterVersion(string version)
+        {
+            var temp = UpdaterVersionRecordPath + ".tmp";
+            File.WriteAllText(
+                temp,
+                new JObject { ["Version"] = version, ["InstalledAtUtc"] = DateTime.UtcNow.ToString("o") }.ToString()
+            );
+            File.Move(temp, UpdaterVersionRecordPath, true);
         }
 
         private static void ValidatePackage(string zipFilePath, string requiredEntry)

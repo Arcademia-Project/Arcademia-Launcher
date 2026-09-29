@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using ArcademiaGameLauncher.Services;
+using ArcademiaGameLauncher.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -79,6 +80,10 @@ namespace ArcademiaGameLauncher
 
                     JObject config = JObject.Parse(File.ReadAllText(configPath));
                     services.AddSingleton(config);
+
+                    FullscreenDetector.HandOffToGameWhenFullscreen =
+                        config["DrawAchievementsInGameWhenFullscreen"]?.Type == JTokenType.Boolean
+                        && config["DrawAchievementsInGameWhenFullscreen"].Value<bool>();
 
                     // Register HTTP Client
                     var host = config["ApiHost"]?.ToString() ?? "https://localhost:5001";

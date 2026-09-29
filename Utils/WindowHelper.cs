@@ -11,6 +11,8 @@ namespace ArcademiaGameLauncher.Utils
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
+        public static IntPtr ForegroundWindow() => GetForegroundWindow();
+
         [DllImport("user32.dll")]
         private static extern uint GetGuiResources(IntPtr hProcess, uint uiFlags);
 

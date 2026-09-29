@@ -75,8 +75,65 @@ namespace ArcademiaGameLauncher.Windows
         private bool _overlayExitWasDown = false;
         private volatile bool _restoreKeymappingOnRelease = false;
         private int _overlayIdleMs = 0;
+        private int _overlayFocusCheckMs = 0;
 
         private bool IsModalOverlayOpen => _overlayWindow.IsOpen || _sessionClaimWindow.IsOpen;
+
+        private IntPtr _fittedGameWindow = IntPtr.Zero;
+        private Int32Rect _fittedOriginalBounds;
+        private Int32Rect _fittedShrunkBounds;
+
+        private bool IsLauncherWindowOverGame =>
+            _overlayWindow.IsOpen
+            || _toastWindow.IsVisible
+            || _isInfoWindowVisible
+            || _isClaimWindowVisible;
+
+        private void UpdateGameWindowFit(IntPtr gameHandle)
+        {
+            if (_fittedGameWindow != IntPtr.Zero && _fittedGameWindow != gameHandle)
+                _fittedGameWindow = IntPtr.Zero;
+
+            bool needed = gameHandle != IntPtr.Zero && IsLauncherWindowOverGame;
+
+            if (!needed)
+            {
+                if (_fittedGameWindow != IntPtr.Zero)
+                    RestoreGameWindowFit();
+                return;
+            }
+
+            if (!NativeWindows.TryGetBounds(gameHandle, out var bounds))
+                return;
+
+            if (_fittedGameWindow != IntPtr.Zero)
+            {
+                if (bounds.Equals(_fittedOriginalBounds))
+                    NativeWindows.SetBounds(gameHandle, _fittedShrunkBounds);
+                return;
+            }
+
+            if (!bounds.Equals(NativeWindows.MonitorBounds(gameHandle)))
+                return;
+
+            _fittedGameWindow = gameHandle;
+            _fittedOriginalBounds = bounds;
+            _fittedShrunkBounds = new Int32Rect(bounds.X, bounds.Y, bounds.Width, bounds.Height - 1);
+            NativeWindows.SetBounds(gameHandle, _fittedShrunkBounds);
+            _logger.LogInformation("[Windows] Game fills its monitor; shrinking it by 1px while launcher windows are shown over it");
+        }
+
+        private void RestoreGameWindowFit()
+        {
+            var handle = _fittedGameWindow;
+            _fittedGameWindow = IntPtr.Zero;
+
+            if (NativeWindows.TryGetBounds(handle, out var current) && current.Equals(_fittedShrunkBounds))
+            {
+                NativeWindows.SetBounds(handle, _fittedOriginalBounds);
+                _logger.LogInformation("[Windows] Restored the game window to fill its monitor");
+            }
+        }
 
         private const int DevExitKey = 0x78;
         private const int DevExitHoldMs = 1000;
@@ -257,6 +314,10 @@ namespace ArcademiaGameLauncher.Windows
             _overlayWindow = new AchievementsOverlayWindow(GetGameWindowHandle);
             _sessionClaimWindow = new SessionClaimWindow();
 
+            _toastWindow.IsVisibleChanged += (_, _) => ApplyWindowZOrder();
+            _infoWindow.IsVisibleChanged += (_, _) => ApplyWindowZOrder();
+            _claimWindow.IsVisibleChanged += (_, _) => ApplyWindowZOrder();
+
             _achievementSession.ToastRequested += toast =>
                 Dispatcher?.InvokeAsync(() => _toastWindow.Enqueue(toast));
 
@@ -269,6 +330,7 @@ namespace ArcademiaGameLauncher.Windows
                     _restoreKeymappingOnRelease = false;
                     _controllerManager?.SetKeymapping(false);
                     _overlayWindow.ShowSnapshot(snapshot);
+                    WindowHelper.ForceForeground(_overlayWindow.Handle);
                     ApplyWindowZOrder();
                 });
             _achievementOverlay.CloseRequested += () =>
@@ -276,6 +338,9 @@ namespace ArcademiaGameLauncher.Windows
                 {
                     _overlayWindow.HideOverlay();
                     _restoreKeymappingOnRelease = true;
+                    var gameWindow = GetGameWindowHandle();
+                    if (gameWindow != IntPtr.Zero)
+                        WindowHelper.ForceForeground(gameWindow);
                     _afkTimer = 0;
                     ApplyWindowZOrder();
                 });
@@ -433,9 +498,9 @@ namespace ArcademiaGameLauncher.Windows
 
             // Set the Copyright text
             Copyright.Text =
-                "Copyright ©️ 2018 - "
+                "©️ 2018 - "
                 + DateTime.Now.Year
-                + "\nUniversity of Lincoln,\nAll rights reserved.";
+                + " Arcademia,\n\nAll rights reserved.";
 
             // Initialize the TextBlock arrays
             _homeOptionsList = [GameLibraryText, InputMenuText, AboutText, ExitText];
@@ -1359,7 +1424,7 @@ namespace ArcademiaGameLauncher.Windows
                     try
                     {
                         _currentlyRunningProcess.Refresh();
-                        var handle = _currentlyRunningProcess.MainWindowHandle;
+                        var handle = GameWindowFinder.Find(_currentlyRunningProcess.Id);
                         if (handle != IntPtr.Zero && !IsModalOverlayOpen)
                             WindowHelper.ForceForeground(handle);
                     }
@@ -1708,7 +1773,7 @@ namespace ArcademiaGameLauncher.Windows
             if (process == null)
                 return;
 
-            var deadline = DateTime.UtcNow.AddSeconds(10);
+            var deadline = DateTime.UtcNow.AddSeconds(30);
             IntPtr handle = IntPtr.Zero;
 
             while (DateTime.UtcNow < deadline)
@@ -1718,7 +1783,7 @@ namespace ArcademiaGameLauncher.Windows
                     if (process.HasExited)
                         return;
                     process.Refresh();
-                    handle = process.MainWindowHandle;
+                    handle = GameWindowFinder.Find(process.Id);
                     if (handle != IntPtr.Zero)
                         break;
                 }
@@ -1749,7 +1814,7 @@ namespace ArcademiaGameLauncher.Windows
                     if (process.HasExited)
                         return;
                     process.Refresh();
-                    var currentHandle = process.MainWindowHandle;
+                    var currentHandle = GameWindowFinder.Find(process.Id);
                     if (currentHandle != IntPtr.Zero && !IsModalOverlayOpen)
                     {
                         handle = currentHandle;
@@ -1777,10 +1842,12 @@ namespace ArcademiaGameLauncher.Windows
                     try
                     {
                         _currentlyRunningProcess.Refresh();
-                        gameHandle = _currentlyRunningProcess.MainWindowHandle;
+                        gameHandle = GameWindowFinder.Find(_currentlyRunningProcess.Id);
                     }
                     catch { }
                 }
+
+                UpdateGameWindowFit(gameHandle);
 
                 if (
                     gameRunning
@@ -2000,7 +2067,7 @@ namespace ArcademiaGameLauncher.Windows
                                     && !_currentlyRunningProcess.HasExited
                                 )
                                 {
-                                    _currentlyRunningProcess.Kill();
+                                    _currentlyRunningProcess.Kill(true);
 
                                     _logger.LogInformation(
                                         "[Force Exit] Process killed successfully."
@@ -2088,7 +2155,7 @@ namespace ArcademiaGameLauncher.Windows
                 if (process is null || process.HasExited)
                     return IntPtr.Zero;
                 process.Refresh();
-                return process.MainWindowHandle;
+                return GameWindowFinder.Find(process.Id);
             }
             catch
             {
@@ -2135,6 +2202,18 @@ namespace ArcademiaGameLauncher.Windows
             }
 
             _afkTimer = 0;
+
+            if ((_overlayFocusCheckMs += frameMs) >= 500)
+            {
+                _overlayFocusCheckMs = 0;
+                Dispatcher?.InvokeAsync(() =>
+                {
+                    var overlay = _overlayWindow.Handle;
+                    if (_overlayWindow.IsOpen && WindowHelper.ForegroundWindow() != overlay)
+                        WindowHelper.ForceForeground(overlay);
+                });
+            }
+
             var direction = _controllerManager.GetEitherLeftStickDirection()[1];
 
             if (direction != 0)
@@ -2192,7 +2271,7 @@ namespace ArcademiaGameLauncher.Windows
                     ResetControllerStates();
                     try
                     {
-                        _currentlyRunningProcess.Kill();
+                        _currentlyRunningProcess.Kill(true);
                     }
                     catch { }
                     _ = _sessionTracking.EndSessionAsync("AFK");
@@ -2643,7 +2722,7 @@ namespace ArcademiaGameLauncher.Windows
             // Close the currently running process
             if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
             {
-                _currentlyRunningProcess.Kill();
+                _currentlyRunningProcess.Kill(true);
 
                 _ = _socket.SafeReportStatus("Idle");
                 _currentlyRunningProcess = null;
@@ -2670,7 +2749,7 @@ namespace ArcademiaGameLauncher.Windows
             // Close the currently running process
             if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
             {
-                _currentlyRunningProcess.Kill();
+                _currentlyRunningProcess.Kill(true);
 
                 _ = _socket.SafeReportStatus("Idle");
                 _currentlyRunningProcess = null;

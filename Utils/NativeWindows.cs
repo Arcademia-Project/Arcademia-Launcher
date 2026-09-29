@@ -15,6 +15,8 @@ namespace ArcademiaGameLauncher.Utils
         private const uint SWP_NOMOVE = 0x0002;
         private const uint SWP_NOACTIVATE = 0x0010;
         private const uint SWP_SHOWWINDOW = 0x0040;
+        private const uint SWP_NOZORDER = 0x0004;
+        private const uint SWP_ASYNCWINDOWPOS = 0x4000;
         private const uint MONITOR_DEFAULTTOPRIMARY = 1;
         private static readonly IntPtr HWND_TOPMOST = new(-1);
 
@@ -64,15 +66,42 @@ namespace ArcademiaGameLauncher.Utils
             public int Y;
         }
 
-        public static void MakeOverlay(IntPtr handle, bool clickThrough)
+        public static void MakeOverlay(IntPtr handle, bool clickThrough, bool activatable = false)
         {
             if (handle == IntPtr.Zero)
                 return;
             var style = GetWindowLongPtr(handle, GWL_EXSTYLE).ToInt64();
-            style |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED;
+            style |= WS_EX_TOOLWINDOW | WS_EX_LAYERED;
+            if (!activatable)
+                style |= WS_EX_NOACTIVATE;
             if (clickThrough)
                 style |= WS_EX_TRANSPARENT;
             SetWindowLongPtr(handle, GWL_EXSTYLE, new IntPtr(style));
+        }
+
+        public static bool TryGetBounds(IntPtr handle, out Int32Rect bounds)
+        {
+            bounds = default;
+            if (handle == IntPtr.Zero || !GetWindowRect(handle, out var rect))
+                return false;
+
+            bounds = new Int32Rect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+            return true;
+        }
+
+        public static void SetBounds(IntPtr handle, Int32Rect bounds)
+        {
+            if (handle == IntPtr.Zero)
+                return;
+            SetWindowPos(
+                handle,
+                IntPtr.Zero,
+                bounds.X,
+                bounds.Y,
+                bounds.Width,
+                bounds.Height,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
+            );
         }
 
         public static void KeepOnTop(IntPtr handle)

@@ -19,6 +19,10 @@ namespace ArcademiaGameLauncher.Utils
         [DllImport("shell32.dll")]
         private static extern int SHQueryUserNotificationState(out QueryUserNotificationState state);
 
+        public static bool HandOffToGameWhenFullscreen { get; set; }
+
+        public static bool ShouldGameDraw() => HandOffToGameWhenFullscreen && IsExclusiveFullscreen();
+
         public static bool IsExclusiveFullscreen()
         {
             try

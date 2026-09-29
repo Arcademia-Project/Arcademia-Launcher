@@ -46,7 +46,7 @@ namespace ArcademiaGameLauncher.Services
 
         public async Task<string> OpenAsync()
         {
-            if (FullscreenDetector.IsExclusiveFullscreen())
+            if (FullscreenDetector.ShouldGameDraw())
                 return "game";
 
             var snapshot = await _achievements.GetSnapshotAsync();
