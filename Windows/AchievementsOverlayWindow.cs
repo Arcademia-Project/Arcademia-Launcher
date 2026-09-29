@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using ArcademiaGameLauncher.Models;
 using ArcademiaGameLauncher.Services;
 using ArcademiaGameLauncher.Utils;
@@ -65,16 +66,27 @@ namespace ArcademiaGameLauncher.Windows
             _root.Children.Add(panel);
 
             IsOpen = true;
-            Opacity = 1;
+            BeginAnimation(OpacityProperty, null);
+            Opacity = 0;
             Show();
             NativeWindows.KeepOnTop(handle);
+            BeginAnimation(
+                OpacityProperty,
+                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
+                {
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+                }
+            );
         }
 
-        public void KeepOnTop() => NativeWindows.KeepOnTop(new WindowInteropHelper(this).Handle);
+        public IntPtr Handle => new WindowInteropHelper(this).Handle;
+
+        public void KeepOnTop() => NativeWindows.KeepOnTop(Handle);
 
         public void HideOverlay()
         {
             IsOpen = false;
+            BeginAnimation(OpacityProperty, null);
             Hide();
             _root.Children.Clear();
             _scroll = null;

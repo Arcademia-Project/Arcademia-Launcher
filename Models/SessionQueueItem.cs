@@ -26,6 +26,7 @@ namespace ArcademiaGameLauncher.Models
 
         public string CodeHash { get; set; }
         public string ShownAtUtc { get; set; }
+        public long? ShownAtTickCount { get; set; }
 
         public string QueuedAtUtc { get; set; } = null!;
         public int AttemptCount { get; set; }

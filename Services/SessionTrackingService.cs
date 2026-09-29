@@ -377,6 +377,9 @@ namespace ArcademiaGameLauncher.Services
                 ExternalId = sessionId,
                 CodeHash = codeHash,
                 ShownAtUtc = shownAtUtc.ToString("o"),
+                ShownAtTickCount =
+                    Environment.TickCount64
+                    - (long)Math.Max(0, (DateTime.UtcNow - shownAtUtc).TotalMilliseconds),
                 QueuedAtUtc = DateTime.UtcNow.ToString("o"),
             };
 
@@ -388,6 +391,7 @@ namespace ArcademiaGameLauncher.Services
                     sessionId,
                     codeHash,
                     item.ShownAtUtc,
+                    ShownAgoMs(item),
                     cts.Token
                 );
                 if (result.Kind != ClaimPostKind.Transient)
@@ -399,6 +403,17 @@ namespace ArcademiaGameLauncher.Services
                 _ = Task.Run(FlushQueueAsync);
 
             return (new SessionClaimRegisterResult(ClaimPostKind.Transient, "pending", null, null), true);
+        }
+
+        private static readonly long MaxShownAgoMs = (long)TimeSpan.FromDays(7).TotalMilliseconds;
+
+        private static long? ShownAgoMs(SessionQueueItem item)
+        {
+            if (item.ShownAtTickCount is not long shownAt)
+                return null;
+
+            var elapsed = Environment.TickCount64 - shownAt;
+            return elapsed is >= 0 && elapsed <= MaxShownAgoMs ? elapsed : null;
         }
 
         public async Task<bool> RemoveQueuedSessionClaimAsync(string codeHash)
@@ -497,6 +512,7 @@ namespace ArcademiaGameLauncher.Services
                                 item.ExternalId,
                                 item.CodeHash,
                                 item.ShownAtUtc,
+                                ShownAgoMs(item),
                                 cts.Token
                             );
                             if (result.Kind == ClaimPostKind.Transient)

@@ -94,6 +94,7 @@ namespace ArcademiaGameLauncher.Services
             string sessionId,
             string codeHash,
             string shownAtUtc,
+            long? shownAgoMs,
             CancellationToken cancellationToken
         );
 
@@ -872,12 +873,13 @@ namespace ArcademiaGameLauncher.Services
             string sessionId,
             string codeHash,
             string shownAtUtc,
+            long? shownAgoMs,
             CancellationToken cancellationToken
         ) =>
             SendSessionClaimAsync(
                 HttpMethod.Post,
                 "/api/Achievements/Machine/Claims",
-                new { sessionId, codeHash, shownAt = shownAtUtc },
+                new { sessionId, codeHash, shownAt = shownAtUtc, shownAgoMs },
                 cancellationToken
             );
 

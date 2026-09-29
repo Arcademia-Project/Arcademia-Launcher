@@ -308,9 +308,14 @@ namespace ArcademiaGameLauncher.Utils
             return maxHeldFor;
         }
 
-        public void ToggleKeymapping()
+        public void ToggleKeymapping() => SetKeymapping(!_isKeymapping);
+
+        public void SetKeymapping(bool isKeymapping)
         {
-            _isKeymapping = !_isKeymapping;
+            if (_isKeymapping == isKeymapping)
+                return;
+
+            _isKeymapping = isKeymapping;
 
             foreach (var controllerState in _controllerStates)
                 controllerState.SetKeymapping(_isKeymapping);
