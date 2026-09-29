@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -8,12 +12,71 @@ namespace ArcademiaGameLauncher.Utils
 {
     public static class AchievementVisuals
     {
-        public static readonly FontFamily Font = new("Segoe UI");
-
         public static readonly string AssemblyName = typeof(AchievementVisuals).Assembly.GetName().Name;
 
         public static Uri Pack(string path) =>
             new($"pack://application:,,,/{AssemblyName};component/{path}", UriKind.Absolute);
+
+        private static readonly FontFamily BundledFont = new(Pack("Fonts/"), "./#Press Start 2P");
+
+        public static readonly bool UseSystemFont = !IsRunningUnderWine() && IsSystemFontInstalled("segoeui.ttf");
+
+        public static readonly FontFamily Font = UseSystemFont ? new("Segoe UI") : BundledFont;
+
+        private static readonly Lazy<IDictionary<int, ushort>> BundledGlyphs = new(() =>
+            new Typeface(BundledFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal)
+                .TryGetGlyphTypeface(out var glyphTypeface)
+                ? glyphTypeface.CharacterToGlyphMap
+                : null
+        );
+
+        public static string SafeText(string text)
+        {
+            if (UseSystemFont || string.IsNullOrEmpty(text))
+                return text ?? "";
+
+            var glyphs = BundledGlyphs.Value;
+            var builder = new StringBuilder(text.Length);
+            foreach (var rune in text.EnumerateRunes())
+            {
+                if (rune.Value is '\n' or '\r' or '\t' || glyphs == null || glyphs.ContainsKey(rune.Value))
+                    builder.Append(rune.ToString());
+                else if (!Rune.IsControl(rune) && rune.Value is not (0x200D or 0xFE0F))
+                    builder.Append('?');
+            }
+            return builder.ToString();
+        }
+
+        private static bool IsSystemFontInstalled(string fileName)
+        {
+            try
+            {
+                return File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), fileName));
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr GetModuleHandle(string moduleName);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Ansi)]
+        private static extern IntPtr GetProcAddress(IntPtr module, string procName);
+
+        private static bool IsRunningUnderWine()
+        {
+            try
+            {
+                var ntdll = GetModuleHandle("ntdll.dll");
+                return ntdll != IntPtr.Zero && GetProcAddress(ntdll, "wine_get_version") != IntPtr.Zero;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
 
         private static BitmapSource _logoTop;
         private static BitmapSource _logoBottom;

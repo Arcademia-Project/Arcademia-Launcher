@@ -20,6 +20,9 @@ namespace ArcademiaGameLauncher.Utils
         )]
         public static extern short GetAsyncKeyState(int keyCode);
 
+        private const int MinimumSlots = 2;
+        private const int DeviceScanIntervalMs = 2000;
+
         private readonly MainWindow _mainWindow;
         private readonly ILogger<ControllerManager> _logger;
         private readonly Keyboard keyboard;
@@ -31,7 +34,11 @@ namespace ArcademiaGameLauncher.Utils
         private bool _debugModeRunning = false;
 
         private DirectInput _directInput;
-        private readonly List<ControllerState> _controllerStates = [];
+        private readonly object _slotsLock = new();
+        private readonly Dictionary<Guid, int> _slotByDevice = [];
+        private readonly CancellationTokenSource _deviceWatcherCts = new();
+        private List<ControllerState> _controllerStates = [];
+        private ControllerMapping _mapping;
 
         public ControllerManager(
             MainWindow mainWindow,
@@ -47,76 +54,157 @@ namespace ArcademiaGameLauncher.Utils
             _isKeymapping = true;
             _debugMode = false;
 
-            JoyStickInit();
+            _directInput = new();
+
+            for (int i = 0; i < MinimumSlots; i++)
+                AddSlot();
+
+            SyncDevices();
+            StartDeviceWatcher();
+            ListenForDebugKey();
         }
 
         public void Dispose()
         {
+            _deviceWatcherCts.Cancel();
+
             foreach (var controllerState in _controllerStates)
             {
                 controllerState.StopPolling();
+                controllerState.Detach();
             }
             _directInput.Dispose();
         }
 
-        private void JoyStickInit()
+        private ControllerState AddSlot()
         {
-            // Initialize Direct Input
-            _directInput = new();
+            var controllerState = new ControllerState(
+                _controllerStates.Count,
+                () => _mainWindow.Key_Pressed(),
+                SendKey
+            );
+            controllerState.UpdateMapping(_mapping);
+            controllerState.SetKeymapping(_isKeymapping);
+            controllerState.SetDebugMode(_debugMode);
+            controllerState.StartPolling(_pollingRate);
 
-            // Find a JoyStick Guid
-            List<Guid> joystickGuids = [];
+            _controllerStates = [.. _controllerStates, controllerState];
+            return controllerState;
+        }
 
-            // Find a Gamepad Guid
+        private List<Guid> FindConnectedDevices()
+        {
+            List<Guid> deviceGuids = [];
+
+            // Prefer Gamepads, fall back to Joysticks
             foreach (
                 var deviceInstance in _directInput.GetDevices(
                     DeviceType.Gamepad,
-                    DeviceEnumerationFlags.AllDevices
+                    DeviceEnumerationFlags.AttachedOnly
                 )
             )
-                joystickGuids.Add(deviceInstance.InstanceGuid);
+                deviceGuids.Add(deviceInstance.InstanceGuid);
 
-            // If no Gamepad is found, find a Joystick
-            if (joystickGuids.Count == 0)
+            if (deviceGuids.Count == 0)
                 foreach (
                     var deviceInstance in _directInput.GetDevices(
                         DeviceType.Joystick,
-                        DeviceEnumerationFlags.AllDevices
+                        DeviceEnumerationFlags.AttachedOnly
                     )
                 )
-                    joystickGuids.Add(deviceInstance.InstanceGuid);
+                    deviceGuids.Add(deviceInstance.InstanceGuid);
 
-            // If no Joystick is found, throw an error
-            if (joystickGuids.Count == 0)
+            return deviceGuids;
+        }
+
+        private void SyncDevices()
+        {
+            List<Guid> connected;
+            try
             {
-                //MessageBox.Show("No joystick or gamepad found.");
-                //Application.Current?.Shutdown();
+                connected = FindConnectedDevices();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[ControllerManager] Could not enumerate controllers");
                 return;
             }
 
-            // For each Joystick Guid, create a new Joystick object
-            foreach (Guid joystickGuid in joystickGuids)
+            lock (_slotsLock)
             {
-                Joystick joystick = new(_directInput, joystickGuid);
+                foreach (var controllerState in _controllerStates)
+                {
+                    if (
+                        controllerState.DeviceGuid is Guid guid
+                        && (controllerState.IsDeviceLost || !connected.Contains(guid))
+                    )
+                    {
+                        controllerState.Detach();
+                        _logger.LogInformation(
+                            "[ControllerManager] Controller disconnected from player {Player}",
+                            controllerState.GetIndex() + 1
+                        );
+                    }
+                }
 
-                var allEffects = joystick.GetEffects();
-                foreach (var effectInfo in allEffects)
-                    Console.WriteLine(effectInfo.Name);
+                foreach (var guid in connected)
+                {
+                    if (_controllerStates.Exists(c => c.DeviceGuid == guid))
+                        continue;
 
-                joystick.Properties.BufferSize = 128;
-                joystick.Acquire();
-
-                ControllerState controllerState = new(
-                    joystick,
-                    _controllerStates.Count,
-                    () => _mainWindow.Key_Pressed(),
-                    SendKey
-                );
-                _controllerStates.Add(controllerState);
+                    var slot = FindSlotFor(guid);
+                    try
+                    {
+                        slot.Attach(new Joystick(_directInput, guid), guid);
+                        _slotByDevice[guid] = slot.GetIndex();
+                        _logger.LogInformation(
+                            "[ControllerManager] Controller connected as player {Player}",
+                            slot.GetIndex() + 1
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(
+                            ex,
+                            "[ControllerManager] Could not attach controller to player {Player}",
+                            slot.GetIndex() + 1
+                        );
+                    }
+                }
             }
+        }
 
-            StartPolling();
-            ListenForDebugKey();
+        private ControllerState FindSlotFor(Guid guid)
+        {
+            if (
+                _slotByDevice.TryGetValue(guid, out int previousSlot)
+                && previousSlot < _controllerStates.Count
+                && !_controllerStates[previousSlot].HasDevice
+            )
+                return _controllerStates[previousSlot];
+
+            var freeSlot = _controllerStates.Find(c =>
+                !c.HasDevice && !_slotByDevice.ContainsValue(c.GetIndex())
+            );
+            freeSlot ??= _controllerStates.Find(c => !c.HasDevice);
+
+            return freeSlot ?? AddSlot();
+        }
+
+        private void StartDeviceWatcher()
+        {
+            var token = _deviceWatcherCts.Token;
+            var thread = new Thread(() =>
+            {
+                while (!token.WaitHandle.WaitOne(DeviceScanIntervalMs))
+                    SyncDevices();
+            })
+            {
+                IsBackground = true,
+                Priority = ThreadPriority.BelowNormal,
+                Name = "ControllerDeviceWatcher",
+            };
+            thread.Start();
         }
 
         public void StartPolling()
@@ -403,6 +491,7 @@ namespace ArcademiaGameLauncher.Utils
         public void UpdateMapping(ControllerMapping mapping)
         {
             _logger.LogInformation("[ControllerManager] Updating controller mappings...");
+            _mapping = mapping;
             foreach (var controllerState in _controllerStates)
                 controllerState.UpdateMapping(mapping);
         }

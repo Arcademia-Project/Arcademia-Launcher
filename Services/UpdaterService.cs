@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -7,7 +9,6 @@ using System.Threading.Tasks;
 using ArcademiaGameLauncher.Models;
 using ICSharpCode.SharpZipLib.Zip;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json.Linq;
 
 namespace ArcademiaGameLauncher.Services
 {
@@ -24,7 +25,7 @@ namespace ArcademiaGameLauncher.Services
 
         Task DownloadSiteLogo();
         Task CheckUpdaterAndUpdateAsync(CancellationToken cancellationToken);
-        Task CheckGamesAndUpdateAsync(JObject[] gameinfoList, CancellationToken cancellationToken);
+        Task CheckGamesAndUpdateAsync(CancellationToken cancellationToken);
         Task CheckControllerMappingAsync(CancellationToken cancellationToken);
     }
 
@@ -123,6 +124,17 @@ namespace ArcademiaGameLauncher.Services
         private readonly string _applicationPath;
         private readonly string _updaterDir;
         private readonly string _gamesDir;
+        private const string UpdaterExeName = "Research-Arcade-Updater.exe";
+        private static readonly string[] UpdaterBinaryPatterns =
+        [
+            "*.dll",
+            "*.exe",
+            "*.pdb",
+            "*.deps.json",
+            "*.runtimeconfig.json",
+            "*.dll.config",
+        ];
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _gameLocks = new(StringComparer.OrdinalIgnoreCase);
 
         public UpdaterService(
             IApiClient apiClient,
@@ -177,16 +189,57 @@ namespace ArcademiaGameLauncher.Services
         public async Task CheckUpdaterAndUpdateAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("[UpdaterService] Checking for updater updates...");
+
+            Version latestVersion;
             try
             {
-                Version latestVersion = new(await _apiClient.GetLatestUpdaterVersionAsync(_logger));
+                latestVersion = new(await _apiClient.GetLatestUpdaterVersionAsync(_logger));
+            }
+            catch (Exception)
+            {
+                return;
+            }
 
-                // Close the updater if it's running and allow time for it to close
-                OnCloseGameAndUpdater();
-                await Task.Delay(1000, cancellationToken);
+            string stagingDir;
+            try
+            {
+                stagingDir = await StageUpdaterAsync(latestVersion, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "[UpdaterService] Could not download updater {VersionNumber}; keeping the current updater.",
+                    latestVersion
+                );
+                return;
+            }
 
-                await DownloadUpdaterAndExtractAsync(latestVersion, cancellationToken);
+            // Close the updater only once the new version is ready to swap in
+            OnCloseGameAndUpdater();
+            await WaitForUpdaterExitAsync();
 
+            bool installed = false;
+            try
+            {
+                SwapUpdaterFiles(stagingDir);
+                installed = true;
+                _logger.LogInformation(
+                    "[UpdaterService] Installed updater {VersionNumber}.",
+                    latestVersion
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[UpdaterService] Failed to install updater {VersionNumber}.", latestVersion);
+            }
+            finally
+            {
+                TryDeleteDirectory(stagingDir);
+            }
+
+            if (installed)
+            {
                 try
                 {
                     bool updateResult = await _apiClient.UpdateRemoteUpdaterVersionAsync(
@@ -194,16 +247,7 @@ namespace ArcademiaGameLauncher.Services
                         _logger
                     );
 
-                    if (updateResult)
-                    {
-                        if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation(
-                                "[UpdaterService] Successfully updated updater version to {VersionNumber}.",
-                                latestVersion
-                            );
-                        OnRelaunchUpdater();
-                    }
-                    else if (_logger.IsEnabled(LogLevel.Warning))
+                    if (!updateResult && _logger.IsEnabled(LogLevel.Warning))
                         _logger.LogWarning(
                             "[UpdaterService] Failed to update remote updater version to {VersionNumber}.",
                             latestVersion
@@ -211,11 +255,11 @@ namespace ArcademiaGameLauncher.Services
                 }
                 catch (Exception) { }
             }
-            catch (Exception) { }
+
+            OnRelaunchUpdater();
         }
 
         public async Task CheckGamesAndUpdateAsync(
-            JObject[] gameinfoList,
             CancellationToken cancellationToken
         )
         {
@@ -254,77 +298,22 @@ namespace ArcademiaGameLauncher.Services
                 // Update each game
                 foreach (var game in games)
                 {
-                    _ = Task.Run(
-                        async () =>
-                        {
-                            OnStateChanged(GameState.checkingForUpdates, game.Name);
-                            if (_logger.IsEnabled(LogLevel.Information))
-                                _logger.LogInformation(
-                                    "[UpdaterService] Checking for updates for {GameName}...",
-                                    game.Name
-                                );
-
-                            // If the local version matches the remote version and the exe exists, skip the update
-                            if (
-                                gameinfoList.Any(g =>
-                                    g["Name"].ToString() == game.Name
-                                    && g["VersionNumber"].ToString() == game.VersionNumber
-                                )
-                                && File.Exists(
-                                    Path.Combine(_gamesDir, game.FolderName, game.NameOfExecutable)
-                                )
-                            )
+                        _ = Task.Run(
+                            async () =>
                             {
-                                if (_logger.IsEnabled(LogLevel.Information))
-                                    _logger.LogInformation(
-                                        "[UpdaterService] {GameName} is already up to date (v{VersionNumber}). Skipping update.",
-                                        game.Name,
-                                        game.VersionNumber
-                                    );
-
-                                OnGameUpdateCompleted(game.Name);
-
-                                return;
-                            }
-
-                            await DownloadGameAndExtractAsync(game, cancellationToken);
-
-                            try
-                            {
-                                bool updateResult = await _apiClient.UpdateRemoteGameVersionAsync(
-                                    game.Id,
-                                    game.VersionNumber,
-                                    _logger
-                                );
-
-                                if (updateResult)
+                                var gate = _gameLocks.GetOrAdd(game.FolderName, _ => new SemaphoreSlim(1, 1));
+                                await gate.WaitAsync(cancellationToken);
+                                try
                                 {
-                                    if (_logger.IsEnabled(LogLevel.Information))
-                                        _logger.LogInformation(
-                                            "[UpdaterService] Successfully updated {GameName} to version {VersionNumber}.",
-                                            game.Name,
-                                            game.VersionNumber
-                                        );
-                                    OnGameUpdateCompleted(game.Name);
+                                    await UpdateGameAsync(game, cancellationToken);
                                 }
-                                else
+                                finally
                                 {
-                                    if (_logger.IsEnabled(LogLevel.Warning))
-                                        _logger.LogWarning(
-                                            "[UpdaterService] Failed to update {GameName} to version {VersionNumber}.",
-                                            game.Name,
-                                            game.VersionNumber
-                                        );
-                                    OnStateChanged(GameState.failed, game.Name);
+                                    gate.Release();
                                 }
-                            }
-                            catch (Exception)
-                            {
-                                OnGameUpdateCompleted(game.Name);
-                            }
-                        },
-                        cancellationToken
-                    );
+                            },
+                            cancellationToken
+                        );
                 }
             }
             catch (Exception ex)
@@ -336,7 +325,102 @@ namespace ArcademiaGameLauncher.Services
             }
         }
 
-        private async Task DownloadUpdaterAndExtractAsync(
+        private async Task UpdateGameAsync(GameInfo game, CancellationToken cancellationToken)
+        {
+            OnStateChanged(GameState.checkingForUpdates, game.Name);
+            if (_logger.IsEnabled(LogLevel.Information))
+                _logger.LogInformation(
+                    "[UpdaterService] Checking for updates for {GameName}...",
+                    game.Name
+                );
+
+            // If the installed version matches the remote version and the exe exists, skip the update
+            if (
+                ReadInstalledVersion(game) == game.VersionNumber
+                && File.Exists(
+                    Path.Combine(_gamesDir, game.FolderName, game.NameOfExecutable)
+                )
+            )
+            {
+                if (_logger.IsEnabled(LogLevel.Information))
+                    _logger.LogInformation(
+                        "[UpdaterService] {GameName} is already up to date (v{VersionNumber}). Skipping update.",
+                        game.Name,
+                        game.VersionNumber
+                    );
+
+                OnGameUpdateCompleted(game.Name);
+
+                return;
+        }
+
+        if (IsGameRunning(game))
+        {
+            if (_logger.IsEnabled(LogLevel.Warning))
+                _logger.LogWarning(
+                    "[UpdaterService] {GameName} is running. Deferring update to v{VersionNumber}.",
+                    game.Name,
+                    game.VersionNumber
+                );
+
+            OnGameUpdateCompleted(game.Name);
+
+            return;
+        }
+
+        try
+        {
+            await DownloadGameAndExtractAsync(game, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[UpdaterService] Failed to install {GameName} v{VersionNumber}.",
+                game.Name,
+                game.VersionNumber
+            );
+            OnStateChanged(GameState.failed, game.Name);
+
+            return;
+        }
+
+        try
+        {
+            bool updateResult = await _apiClient.UpdateRemoteGameVersionAsync(
+                game.Id,
+                game.VersionNumber,
+                _logger
+            );
+
+            if (updateResult)
+            {
+                if (_logger.IsEnabled(LogLevel.Information))
+                    _logger.LogInformation(
+                        "[UpdaterService] Successfully updated {GameName} to version {VersionNumber}.",
+                        game.Name,
+                        game.VersionNumber
+                    );
+                OnGameUpdateCompleted(game.Name);
+            }
+            else
+            {
+                if (_logger.IsEnabled(LogLevel.Warning))
+                    _logger.LogWarning(
+                        "[UpdaterService] Failed to update {GameName} to version {VersionNumber}.",
+                        game.Name,
+                        game.VersionNumber
+                    );
+                OnStateChanged(GameState.failed, game.Name);
+            }
+        }
+        catch (Exception)
+        {
+            OnGameUpdateCompleted(game.Name);
+        }
+        }
+
+        private async Task<string> StageUpdaterAsync(
             Version versionNumber,
             CancellationToken cancellationToken
         )
@@ -347,43 +431,151 @@ namespace ArcademiaGameLauncher.Services
                     versionNumber
                 );
 
-            // Delete the old updater files (except the Launcher folder and Config.json)
-            foreach (string file in Directory.GetFiles(_updaterDir))
-                if (
-                    Path.GetFileName(file).ToLower() != "launcher"
-                    && Path.GetFileName(file).ToLower() != "config.json"
+            var packagesDir = Path.Combine(_updaterDir, "Packages");
+            Directory.CreateDirectory(packagesDir);
+            var zipFilePath = Path.Combine(packagesDir, $"updater-{versionNumber}.zip.part");
+            var stagingDir = Path.Combine(_updaterDir, "Updater.staging");
+
+            try
+            {
+                await using (
+                    var zipStream = await _apiClient.GetUpdaterDownloadAsync(
+                        versionNumber.ToString(),
+                        cancellationToken
+                    )
                 )
-                    File.Delete(file);
-
-            // Download the updater zip file
-            await using var zipStream = await _apiClient.GetUpdaterDownloadAsync(
-                versionNumber.ToString(),
-                cancellationToken
-            );
-            var zipFilePath = Path.Combine(_updaterDir, $"{versionNumber}.zip");
-
-            await using (
-                var fileStream = new FileStream(
-                    zipFilePath,
-                    FileMode.Create,
-                    FileAccess.Write,
-                    FileShare.None
+                await using (
+                    var fileStream = new FileStream(
+                        zipFilePath,
+                        FileMode.Create,
+                        FileAccess.Write,
+                        FileShare.None
+                    )
                 )
-            )
-                await zipStream.CopyToAsync(fileStream, cancellationToken);
+                    await zipStream.CopyToAsync(fileStream, cancellationToken);
 
-            if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation(
-                    "[UpdaterService] Updater downloaded successfully: {VersionNumber}",
-                    versionNumber
+                ValidatePackage(zipFilePath, UpdaterExeName);
+
+                TryDeleteDirectory(stagingDir);
+                Directory.CreateDirectory(stagingDir);
+                new FastZip().ExtractZip(zipFilePath, stagingDir, null);
+
+                if (!File.Exists(Path.Combine(stagingDir, UpdaterExeName)))
+                    throw new InvalidDataException($"The updater package does not contain {UpdaterExeName}.");
+
+                return stagingDir;
+            }
+            catch
+            {
+                TryDeleteDirectory(stagingDir);
+                throw;
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(zipFilePath))
+                        File.Delete(zipFilePath);
+                }
+                catch { }
+            }
+        }
+
+        private static void ValidatePackage(string zipFilePath, string requiredEntry)
+        {
+            using var zip = new ZipFile(zipFilePath);
+
+            if (!zip.TestArchive(true))
+                throw new InvalidDataException("The downloaded package is corrupt.");
+
+            bool hasRequiredEntry = false;
+            foreach (ZipEntry entry in zip)
+            {
+                var name = entry.Name.Replace('\\', '/');
+                if (Path.IsPathRooted(name) || name.Split('/').Contains(".."))
+                    throw new InvalidDataException($"The package contains an unsafe path: {entry.Name}");
+
+                if (string.Equals(name, requiredEntry, StringComparison.OrdinalIgnoreCase))
+                    hasRequiredEntry = true;
+            }
+
+            if (!hasRequiredEntry)
+                throw new InvalidDataException($"The package does not contain {requiredEntry}.");
+        }
+
+        private static async Task WaitForUpdaterExitAsync()
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline)
+            {
+                var running = Process.GetProcessesByName(
+                    Path.GetFileNameWithoutExtension(UpdaterExeName)
                 );
+                bool anyRunning = running.Any(p => !p.HasExited);
+                foreach (var process in running)
+                    process.Dispose();
 
-            // Extract the zip file
-            FastZip fastZip = new();
-            fastZip.ExtractZip(zipFilePath, _updaterDir, null);
+                if (!anyRunning)
+                    return;
 
-            // Delete the zip file
-            File.Delete(zipFilePath);
+                await Task.Delay(250);
+            }
+        }
+
+        private void SwapUpdaterFiles(string stagingDir)
+        {
+            var stagedFiles = Directory
+                .GetFiles(stagingDir, "*", SearchOption.AllDirectories)
+                .Select(f => Path.GetRelativePath(stagingDir, f))
+                .Where(f => !string.Equals(f, "Config.json", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var toRemove = new HashSet<string>(stagedFiles, StringComparer.OrdinalIgnoreCase);
+            foreach (var pattern in UpdaterBinaryPatterns)
+                foreach (var file in Directory.GetFiles(_updaterDir, pattern))
+                    toRemove.Add(Path.GetFileName(file));
+            toRemove.Remove("Config.json");
+
+            foreach (var relativePath in toRemove)
+            {
+                var target = Path.Combine(_updaterDir, relativePath);
+                if (File.Exists(target))
+                    DeleteWithRetry(target);
+            }
+
+            foreach (var relativePath in stagedFiles)
+            {
+                var target = Path.Combine(_updaterDir, relativePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Move(Path.Combine(stagingDir, relativePath), target, true);
+            }
+        }
+
+        private static void DeleteWithRetry(string path)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    File.SetAttributes(path, FileAttributes.Normal);
+                    File.Delete(path);
+                    return;
+                }
+                catch (Exception) when (attempt < 10)
+                {
+                    Thread.Sleep(300);
+                }
+            }
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, true);
+            }
+            catch { }
         }
 
         private async Task DownloadGameAndExtractAsync(
@@ -402,12 +594,7 @@ namespace ArcademiaGameLauncher.Services
             var gameDir = Path.Combine(_gamesDir, game.FolderName);
             var gameExists = File.Exists(Path.Combine(gameDir, game.NameOfExecutable));
 
-            // Ensure the game directory exists
-            if (!Directory.Exists(gameDir))
-                Directory.CreateDirectory(gameDir);
-            else // Clear the game directory if it already exists
-                foreach (string file in Directory.GetFiles(gameDir))
-                    File.Delete(file);
+            Directory.CreateDirectory(_gamesDir);
 
             // Download the game zip file
             var downloadResult = await _apiClient.GetGameDownloadAsync(
@@ -418,8 +605,50 @@ namespace ArcademiaGameLauncher.Services
             );
             await using var zipStream = downloadResult.Stream;
             var contentLength = downloadResult.ContentLength;
-            var zipFilePath = Path.Combine(gameDir, $"{game.FolderName}.zip");
+            var zipFilePath = Path.Combine(_gamesDir, $"{game.FolderName}.zip.download");
 
+            try
+            {
+                await DownloadToFileAsync(game, zipStream, contentLength, zipFilePath, cancellationToken);
+
+                if (_logger.IsEnabled(LogLevel.Information))
+                    _logger.LogInformation(
+                        "[UpdaterService] Game downloaded successfully: {GameName}",
+                        game.Name
+                    );
+
+                // Replace the game directory with a clean copy of the new version
+                var markerPath = GetInstalledVersionPath(game);
+                if (File.Exists(markerPath))
+                    File.Delete(markerPath);
+                if (Directory.Exists(gameDir))
+                    Directory.Delete(gameDir, true);
+                Directory.CreateDirectory(gameDir);
+
+                FastZip fastZip = new();
+                fastZip.ExtractZip(zipFilePath, gameDir, null);
+
+                File.WriteAllText(markerPath, game.VersionNumber);
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(zipFilePath))
+                        File.Delete(zipFilePath);
+                }
+                catch { }
+            }
+        }
+
+        private async Task DownloadToFileAsync(
+            GameInfo game,
+            Stream zipStream,
+            long? contentLength,
+            string zipFilePath,
+            CancellationToken cancellationToken
+        )
+        {
             await using (
                 var fileStream = new FileStream(
                     zipFilePath,
@@ -455,19 +684,54 @@ namespace ArcademiaGameLauncher.Services
                     await zipStream.CopyToAsync(fileStream, cancellationToken);
                 }
             }
+        }
 
-            if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation(
-                    "[UpdaterService] Game downloaded successfully: {GameName}",
-                    game.Name
-                );
+        private string GetInstalledVersionPath(GameInfo game) =>
+            Path.Combine(_gamesDir, game.FolderName, ".arcademia-version");
 
-            // Extract the zip file
-            FastZip fastZip = new();
-            fastZip.ExtractZip(zipFilePath, gameDir, null);
+        private string ReadInstalledVersion(GameInfo game)
+        {
+            try
+            {
+                var markerPath = GetInstalledVersionPath(game);
+                return File.Exists(markerPath) ? File.ReadAllText(markerPath).Trim() : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
-            // Delete the zip file
-            File.Delete(zipFilePath);
+        private bool IsGameRunning(GameInfo game)
+        {
+            var gameDir = Path.GetFullPath(Path.Combine(_gamesDir, game.FolderName))
+                .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
+            foreach (
+                var process in Process.GetProcessesByName(
+                    Path.GetFileNameWithoutExtension(game.NameOfExecutable)
+                )
+            )
+            {
+                using (process)
+                {
+                    try
+                    {
+                        var path = process.MainModule?.FileName;
+                        if (
+                            path == null
+                            || path.StartsWith(gameDir, StringComparison.OrdinalIgnoreCase)
+                        )
+                            return true;
+                    }
+                    catch
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         public async Task CheckControllerMappingAsync(CancellationToken cancellationToken)

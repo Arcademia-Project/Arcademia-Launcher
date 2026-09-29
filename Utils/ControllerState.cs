@@ -29,6 +29,8 @@ namespace ArcademiaGameLauncher.Utils
         private CancellationTokenSource _cts;
         private Thread _pollingThread;
         private int _pollingRate;
+        private readonly object _deviceLock = new();
+        private volatile bool _deviceLost;
 
         // Deadzone and Midpoint values for the joystick
         readonly int joystickDeadzone = 7700;
@@ -36,6 +38,10 @@ namespace ArcademiaGameLauncher.Utils
 
         public Joystick joystick;
         public JoystickState state;
+
+        public Guid? DeviceGuid { get; private set; }
+        public bool HasDevice => joystick != null;
+        public bool IsDeviceLost => _deviceLost;
 
         private readonly Action _onInputDetected;
         private readonly Action<string, bool> _onSendKey;
@@ -153,14 +159,11 @@ namespace ArcademiaGameLauncher.Utils
         }
 
         public ControllerState(
-            Joystick _joystick,
             int _index,
             Action onInputDetected,
             Action<string, bool> onSendKey
         )
         {
-            // Set the joystick
-            joystick = _joystick;
             // Set the index of the controller
             index = _index;
             // Set the input detected callback
@@ -197,11 +200,6 @@ namespace ArcademiaGameLauncher.Utils
             buttonStates = new bool[128];
             buttonDownStates = new bool[128];
             buttonUpStates = new bool[128];
-            try
-            {
-                state = joystick.GetCurrentState();
-            }
-            catch { }
 
             InitializeDefaultMapping();
             try
@@ -226,6 +224,62 @@ namespace ArcademiaGameLauncher.Utils
                 }
             }
             catch { }
+        }
+
+        public void Attach(Joystick device, Guid deviceGuid)
+        {
+            lock (_deviceLock)
+            {
+                DetachDevice();
+
+                device.Properties.BufferSize = 128;
+                device.Acquire();
+
+                joystick = device;
+                DeviceGuid = deviceGuid;
+                _deviceLost = false;
+
+                try
+                {
+                    state = joystick.GetCurrentState();
+                }
+                catch { }
+            }
+        }
+
+        public void Detach()
+        {
+            lock (_deviceLock)
+                DetachDevice();
+        }
+
+        private void DetachDevice()
+        {
+            if (joystick == null)
+                return;
+
+            try
+            {
+                joystick.Unacquire();
+            }
+            catch { }
+            try
+            {
+                joystick.Dispose();
+            }
+            catch { }
+
+            joystick = null;
+            DeviceGuid = null;
+            _deviceLost = false;
+            exitButtonHeldFor = 0;
+
+            if (!_debugMode)
+            {
+                ReleaseButtons();
+                direction[0] = 0;
+                direction[1] = 0;
+            }
         }
 
         public void StartPolling(int pollingRate)
@@ -268,42 +322,66 @@ namespace ArcademiaGameLauncher.Utils
 
         private void UpdateButtonStates()
         {
-            try
+            lock (_deviceLock)
             {
-                // Poll the joystick for the current state
-                joystick.Poll();
-                state = joystick.GetCurrentState();
-
-                // Update the joystick states
-                SetLeftStickDirection(state.X, state.Y);
-
-                // Update the button states
-                for (int i = 0; i < buttonStates.Length; i++)
-                    SetButtonState(i, state.Buttons[i]);
-
-                // Update the exit button held for time
-                bool isExitDown = false;
-                foreach (var kvp in _buttonActionMap)
+                if (joystick != null && !_deviceLost)
                 {
-                    if (
-                        string.Equals(kvp.Value, "exit", StringComparison.OrdinalIgnoreCase)
-                        && buttonStates[kvp.Key]
-                    )
+                    try
                     {
-                        isExitDown = true;
-                        break;
+                        PollDevice();
+                    }
+                    catch
+                    {
+                        try
+                        {
+                            joystick.Acquire();
+                            PollDevice();
+                        }
+                        catch
+                        {
+                            _deviceLost = true;
+                        }
                     }
                 }
+            }
 
-                if (isExitDown)
-                    exitButtonHeldFor += _pollingRate;
-                else
-                    exitButtonHeldFor = 0;
-            }
-            catch
+            UpdateExitButtonHeldFor();
+        }
+
+        private void PollDevice()
+        {
+            // Poll the joystick for the current state
+            joystick.Poll();
+            state = joystick.GetCurrentState();
+
+            // Update the joystick states
+            SetLeftStickDirection(state.X, state.Y);
+
+            // Update the button states
+            for (int i = 0; i < buttonStates.Length; i++)
+                SetButtonState(i, state.Buttons[i]);
+        }
+
+        private void UpdateExitButtonHeldFor()
+        {
+            // Update the exit button held for time
+            bool isExitDown = false;
+            foreach (var kvp in _buttonActionMap)
             {
-                // Handle joystick disconnects gracefully
+                if (
+                    string.Equals(kvp.Value, "exit", StringComparison.OrdinalIgnoreCase)
+                    && buttonStates[kvp.Key]
+                )
+                {
+                    isExitDown = true;
+                    break;
+                }
             }
+
+            if (isExitDown)
+                exitButtonHeldFor += _pollingRate;
+            else
+                exitButtonHeldFor = 0;
         }
 
         // Getter and Setter for the joystick direction
@@ -625,19 +703,24 @@ namespace ArcademiaGameLauncher.Utils
 
         public Keybinds(JObject _playerControls, int _index)
         {
-            Up = _playerControls["Up"]?[_index]?.ToString() ?? "UP";
-            Left = _playerControls["Left"]?[_index]?.ToString() ?? "LEFT";
-            Down = _playerControls["Down"]?[_index]?.ToString() ?? "DOWN";
-            Right = _playerControls["Right"]?[_index]?.ToString() ?? "RIGHT";
+            Up = Bind(_playerControls, "Up", _index, "UP");
+            Left = Bind(_playerControls, "Left", _index, "LEFT");
+            Down = Bind(_playerControls, "Down", _index, "DOWN");
+            Right = Bind(_playerControls, "Right", _index, "RIGHT");
 
-            Exit = _playerControls["Exit"]?[_index]?.ToString() ?? "ESCAPE";
-            Start = _playerControls["Start"]?[_index]?.ToString() ?? "RETURN";
-            A = _playerControls["A"]?[_index]?.ToString() ?? "Z";
-            B = _playerControls["B"]?[_index]?.ToString() ?? "X";
-            C = _playerControls["C"]?[_index]?.ToString() ?? "C";
-            D = _playerControls["D"]?[_index]?.ToString() ?? "V";
-            E = _playerControls["E"]?[_index]?.ToString() ?? "B";
-            F = _playerControls["F"]?[_index]?.ToString() ?? "N";
+            Exit = Bind(_playerControls, "Exit", _index, "ESCAPE");
+            Start = Bind(_playerControls, "Start", _index, "RETURN");
+            A = Bind(_playerControls, "A", _index, "Z");
+            B = Bind(_playerControls, "B", _index, "X");
+            C = Bind(_playerControls, "C", _index, "C");
+            D = Bind(_playerControls, "D", _index, "V");
+            E = Bind(_playerControls, "E", _index, "B");
+            F = Bind(_playerControls, "F", _index, "N");
         }
+
+        private static string Bind(JObject playerControls, string key, int index, string fallback) =>
+            playerControls?[key] is JArray keys && index < keys.Count
+                ? keys[index]?.ToString() ?? fallback
+                : fallback;
     }
 }

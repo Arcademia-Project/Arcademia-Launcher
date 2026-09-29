@@ -91,7 +91,7 @@ namespace ArcademiaGameLauncher.Windows
         {
             var block = new TextBlock
             {
-                Text = value ?? "",
+                Text = AchievementVisuals.SafeText(value),
                 FontFamily = AchievementVisuals.Font,
                 FontSize = size,
                 FontWeight = weight,
@@ -177,7 +177,7 @@ namespace ArcademiaGameLauncher.Windows
             if (rows.Count == 0)
                 list.Children.Add(new TextBlock
                 {
-                    Text = "This game has no achievements yet.",
+                    Text = AchievementVisuals.SafeText("This game has no achievements yet."),
                     FontFamily = AchievementVisuals.Font,
                     FontSize = 18,
                     Foreground = new SolidColorBrush(AchievementVisuals.Color(0xA5ADB8)),
@@ -249,7 +249,7 @@ namespace ArcademiaGameLauncher.Windows
             Grid.SetColumn(text, 1);
             text.Children.Add(new TextBlock
             {
-                Text = secret ? "Hidden achievement" : a.Name,
+                Text = AchievementVisuals.SafeText(secret ? "Hidden achievement" : a.Name),
                 FontFamily = AchievementVisuals.Font,
                 FontSize = 20,
                 FontWeight = FontWeights.Bold,
@@ -258,7 +258,7 @@ namespace ArcademiaGameLauncher.Windows
             });
             text.Children.Add(new TextBlock
             {
-                Text = secret ? "Keep playing to discover this one" : a.Description,
+                Text = AchievementVisuals.SafeText(secret ? "Keep playing to discover this one" : a.Description),
                 FontFamily = AchievementVisuals.Font,
                 FontSize = 15,
                 Foreground = new SolidColorBrush(unlocked ? AchievementVisuals.Color(0xA5ADB8) : AchievementVisuals.Color(0x80808C)),
@@ -293,7 +293,7 @@ namespace ArcademiaGameLauncher.Windows
 
             var statusText = new TextBlock
             {
-                Text = status,
+                Text = AchievementVisuals.SafeText(status),
                 FontFamily = AchievementVisuals.Font,
                 FontSize = 14,
                 Foreground = new SolidColorBrush(color),

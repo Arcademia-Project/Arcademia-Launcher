@@ -2,6 +2,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows;
 using ArcademiaGameLauncher.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +21,8 @@ namespace ArcademiaGameLauncher
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            UseInstallRootAsWorkingDirectory();
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
@@ -125,11 +128,24 @@ namespace ArcademiaGameLauncher
             _host.Start();
 
             var sessionTracking = _host.Services.GetRequiredService<ISessionTrackingService>();
-            sessionTracking.RecoverCrashAsync().GetAwaiter().GetResult();
+            Task.Run(sessionTracking.RecoverCrashAsync).GetAwaiter().GetResult();
 
             var mainWindow = _host.Services.GetRequiredService<Windows.MainWindow>();
             MainWindow = mainWindow;
             mainWindow.Show();
+        }
+
+        private static void UseInstallRootAsWorkingDirectory()
+        {
+            var exeDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+            var installRoot = exeDirectory.Parent;
+
+            if (
+                installRoot != null
+                && string.Equals(exeDirectory.Name, "Launcher", StringComparison.OrdinalIgnoreCase)
+                && File.Exists(Path.Combine(installRoot.FullName, "Config.json"))
+            )
+                Directory.SetCurrentDirectory(installRoot.FullName);
         }
 
         protected override void OnExit(ExitEventArgs e)

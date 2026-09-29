@@ -589,8 +589,6 @@ namespace ArcademiaGameLauncher.Services
                         QueuedAtUtc = DateTime.UtcNow.ToString("o"),
                     }
                 );
-
-                await FlushQueueAsync();
             }
             catch (Exception ex)
             {

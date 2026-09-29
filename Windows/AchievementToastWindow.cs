@@ -354,7 +354,7 @@ namespace ArcademiaGameLauncher.Windows
         {
             var block = new TextBlock
             {
-                Text = value ?? "",
+                Text = AchievementVisuals.SafeText(value),
                 FontFamily = AchievementVisuals.Font,
                 FontSize = size,
                 FontWeight = weight,

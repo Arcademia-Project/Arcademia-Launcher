@@ -55,6 +55,10 @@ namespace ArcademiaGameLauncher.Utils
         private const uint SWP_NOMOVE = 0x0002;
         private const uint SWP_NOSIZE = 0x0001;
         private const uint SWP_NOACTIVATE = 0x0010;
+        private const uint SWP_ASYNCWINDOWPOS = 0x4000;
+
+        [DllImport("user32.dll")]
+        private static extern bool IsHungAppWindow(IntPtr hWnd);
 
         public static void ForceForeground(Window window)
         {
@@ -78,10 +82,13 @@ namespace ArcademiaGameLauncher.Utils
                 IntPtr foregroundWnd = GetForegroundWindow();
                 if (foregroundWnd != windowHandle)
                 {
+                    if (IsHungAppWindow(windowHandle))
+                        return;
+
                     uint threadId1 = GetWindowThreadProcessId(foregroundWnd, IntPtr.Zero);
                     uint threadId2 = GetWindowThreadProcessId(windowHandle, IntPtr.Zero);
 
-                    if (threadId1 != threadId2)
+                    if (threadId1 != threadId2 && !IsHungAppWindow(foregroundWnd))
                     {
                         AttachThreadInput(threadId2, threadId1, true);
                         SetForegroundWindow(windowHandle);
@@ -94,7 +101,7 @@ namespace ArcademiaGameLauncher.Utils
                             0,
                             0,
                             0,
-                            SWP_NOMOVE | SWP_NOSIZE
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_ASYNCWINDOWPOS
                         );
                         SetWindowPos(
                             windowHandle,
@@ -103,7 +110,7 @@ namespace ArcademiaGameLauncher.Utils
                             0,
                             0,
                             0,
-                            SWP_NOMOVE | SWP_NOSIZE
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_ASYNCWINDOWPOS
                         );
 
                         AttachThreadInput(threadId2, threadId1, false);
@@ -120,7 +127,7 @@ namespace ArcademiaGameLauncher.Utils
                             0,
                             0,
                             0,
-                            SWP_NOMOVE | SWP_NOSIZE
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_ASYNCWINDOWPOS
                         );
                         SetWindowPos(
                             windowHandle,
@@ -129,7 +136,7 @@ namespace ArcademiaGameLauncher.Utils
                             0,
                             0,
                             0,
-                            SWP_NOMOVE | SWP_NOSIZE
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_ASYNCWINDOWPOS
                         );
                     }
                 }
@@ -162,7 +169,7 @@ namespace ArcademiaGameLauncher.Utils
                     0,
                     0,
                     0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
                 );
             });
         }
@@ -193,7 +200,7 @@ namespace ArcademiaGameLauncher.Utils
                     0,
                     0,
                     0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
                 );
             });
         }
@@ -229,7 +236,7 @@ namespace ArcademiaGameLauncher.Utils
                         0,
                         0,
                         0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
                     );
                 }
 
@@ -242,7 +249,7 @@ namespace ArcademiaGameLauncher.Utils
                         0,
                         0,
                         0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
                     );
                 }
 
@@ -255,7 +262,7 @@ namespace ArcademiaGameLauncher.Utils
                         0,
                         0,
                         0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
                     );
                 }
 
@@ -269,7 +276,7 @@ namespace ArcademiaGameLauncher.Utils
                         0,
                         0,
                         0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
                     );
                 }
 
@@ -286,7 +293,7 @@ namespace ArcademiaGameLauncher.Utils
                         0,
                         0,
                         0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
                     );
                 }
             });

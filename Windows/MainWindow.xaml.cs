@@ -71,6 +71,10 @@ namespace ArcademiaGameLauncher.Windows
         private int _consecutiveUiStalls = 0;
         private const int UiStallCheckIntervalSeconds = 5;
         private const int UiStallsBeforeRecovery = 12;
+        private const int DevExitKey = 0x78;
+        private const int DevExitHoldMs = 1000;
+        private const string CloseRequestEventName = @"Local\Arcademia.Launcher.CloseRequested";
+        private int _devExitHeldMs = 0;
 
         private int _selectionAnimationFrame = 0;
         private readonly int _selectionAnimationFrameRate = 100;
@@ -412,6 +416,8 @@ namespace ArcademiaGameLauncher.Windows
 
             // Start the Debug Watchdog
             StartWatchdog();
+
+            ListenForCloseRequests();
 
             // Set the Copyright text
             Copyright.Text =
@@ -900,7 +906,7 @@ namespace ArcademiaGameLauncher.Windows
         {
             try
             {
-                await _updater.CheckGamesAndUpdateAsync(_gameInfoList, CancellationToken.None);
+                await _updater.CheckGamesAndUpdateAsync(CancellationToken.None);
                 return true;
             }
             catch (Exception)
@@ -1485,6 +1491,39 @@ namespace ArcademiaGameLauncher.Windows
             });
         }
 
+        private void ListenForCloseRequests()
+        {
+            EventWaitHandle closeRequested;
+            try
+            {
+                closeRequested = new EventWaitHandle(
+                    false,
+                    EventResetMode.AutoReset,
+                    CloseRequestEventName
+                );
+                closeRequested.Reset();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[System] Could not listen for close requests from the updater");
+                return;
+            }
+
+            var thread = new Thread(() =>
+            {
+                using (closeRequested)
+                    closeRequested.WaitOne();
+
+                _logger.LogInformation("[System] Close requested by the updater");
+                Window_Closing(null, null);
+            })
+            {
+                IsBackground = true,
+                Name = "UpdaterCloseListener",
+            };
+            thread.Start();
+        }
+
         private void LogFreezeDiagnostics(int consecutiveStalls)
         {
             try
@@ -1544,14 +1583,24 @@ namespace ArcademiaGameLauncher.Windows
                 );
                 Log.CloseAndFlush();
 
+                try
+                {
+                    if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
+                        _currentlyRunningProcess.Kill(true);
+                }
+                catch { }
+
+                bool managedByUpdater =
+                    Process.GetProcessesByName("Research-Arcade-Updater").Length > 0;
+
                 string exePath =
                     Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
-                if (!string.IsNullOrEmpty(exePath))
+                if (!managedByUpdater && !string.IsNullOrEmpty(exePath))
                 {
                     Process.Start(
                         new ProcessStartInfo(exePath)
                         {
-                            WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+                            WorkingDirectory = Directory.GetCurrentDirectory(),
                             UseShellExecute = true,
                         }
                     );
@@ -1584,8 +1633,17 @@ namespace ArcademiaGameLauncher.Windows
                     return;
 
                 _currentStep = "Keyboard Check";
-                if (GetAsyncKeyState(69) != 0)
-                    Window_Closing(null, null);
+                if ((GetAsyncKeyState(DevExitKey) & 0x8000) != 0)
+                {
+                    _devExitHeldMs += frameMs;
+                    if (_devExitHeldMs >= DevExitHoldMs)
+                    {
+                        _logger.LogInformation("[System] Dev exit key held, closing the launcher");
+                        Window_Closing(null, null);
+                    }
+                }
+                else
+                    _devExitHeldMs = 0;
 
                 _currentStep = "Exit Logic";
                 HandleExitLogic();
@@ -2562,6 +2620,15 @@ namespace ArcademiaGameLauncher.Windows
                 _currentlyRunningProcess = null;
             }
 
+            try
+            {
+                Task.Run(() => _sessionTracking.EndSessionAsync("LauncherClosed")).Wait(2000);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[System] Could not end the session while closing");
+            }
+
             // Stop polling controllers
             _controllerManager?.Dispose();
 
@@ -3071,7 +3138,11 @@ namespace ArcademiaGameLauncher.Windows
                             ExitButton_Click(null, null);
 
                         // For each Controller State
-                        for (int i = 0; i < _controllerManager.GetControllerCount(); i++)
+                        for (
+                            int i = 0;
+                            i < Math.Min(_controllerManager.GetControllerCount(), _inputMenuJoysticks.Length);
+                            i++
+                        )
                         {
                             // Joystick Input
                             int[] leftStickDirection =
