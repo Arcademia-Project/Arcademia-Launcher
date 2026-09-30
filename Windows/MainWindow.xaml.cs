@@ -3441,7 +3441,7 @@ namespace ArcademiaGameLauncher.Windows
                             }
                             else if (update.IsHttp)
                             {
-                                ResetImagePresentation(_gameImagesList[tileIndex]);
+                                ApplyImagePresentation(_gameImagesList[tileIndex], isBrowsingCollections);
                                 AnimationBehavior.SetSourceUri(
                                     _gameImagesList[tileIndex],
                                     new Uri(update.ImageUri, UriKind.Absolute)
@@ -3518,6 +3518,8 @@ namespace ArcademiaGameLauncher.Windows
                                 isBrowsingCollections ? _collectionPlaceholderOpenBitmap : _placeholderBitmap,
                                 isBrowsingCollections
                             );
+
+                            ApplyImagePresentation(Gif_GameThumbnail, isBrowsingCollections);
 
                             if (imageUri != null)
                             {
@@ -3775,20 +3777,19 @@ namespace ArcademiaGameLauncher.Windows
         private static void SetImageSource(Image imageElement, ImageSource source, bool isCollectionPlaceholder)
         {
             imageElement.Source = source;
-            RenderOptions.SetBitmapScalingMode(
-                imageElement,
-                isCollectionPlaceholder ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.Unspecified
-            );
-            imageElement.RenderTransformOrigin = new Point(0.5, 0.5);
-            imageElement.RenderTransform = isCollectionPlaceholder
-                ? s_collectionPlaceholderScale
-                : Transform.Identity;
+            ApplyImagePresentation(imageElement, isCollectionPlaceholder);
         }
 
-        private static void ResetImagePresentation(Image imageElement)
+        private static void ApplyImagePresentation(Image imageElement, bool isCollectionImage)
         {
-            RenderOptions.SetBitmapScalingMode(imageElement, BitmapScalingMode.Unspecified);
-            imageElement.RenderTransform = Transform.Identity;
+            RenderOptions.SetBitmapScalingMode(
+                imageElement,
+                isCollectionImage ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.Unspecified
+            );
+            imageElement.RenderTransformOrigin = new Point(0.5, 0.5);
+            imageElement.RenderTransform = isCollectionImage
+                ? s_collectionPlaceholderScale
+                : Transform.Identity;
         }
 
         private int _lastFolderStateSelectedIndex = int.MinValue;
@@ -3829,7 +3830,7 @@ namespace ArcademiaGameLauncher.Windows
                 }
                 else
                 {
-                    ResetImagePresentation(_gameImagesList[i]);
+                    ApplyImagePresentation(_gameImagesList[i], isCollectionImage: true);
                     AnimationBehavior.SetSourceUri(_gameImagesList[i], new Uri(thumbUrl, UriKind.Absolute));
                 }
             }
