@@ -17,6 +17,7 @@ namespace ArcademiaGameLauncher.Services
         );
         string? CurrentExternalId { get; }
         event Action SessionEnded;
+        event Action<string, string> SessionEndedWithReason;
         Task StartSessionAsync(
             string externalId,
             int gameId,
@@ -58,6 +59,7 @@ namespace ArcademiaGameLauncher.Services
         public string? CurrentExternalId => _currentExternalId;
 
         public event Action SessionEnded;
+        public event Action<string, string> SessionEndedWithReason;
         private Func<string, int, string, Task>? _invokeStart;
         private Func<string, string, string, Task>? _invokeEnd;
 
@@ -136,6 +138,7 @@ namespace ArcademiaGameLauncher.Services
             _currentExternalId = null;
             DeleteCurrentFile();
             SessionEnded?.Invoke();
+            SessionEndedWithReason?.Invoke(externalId, endReason);
 
             var endedAt = DateTime.UtcNow;
             _logger.LogInformation(

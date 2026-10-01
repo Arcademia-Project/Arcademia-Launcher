@@ -35,8 +35,18 @@ namespace ArcademiaGameLauncher
                 .WriteTo.Console()
                 .WriteTo.File(
                     "Logs/ArcadeClient-.log",
+                    restrictedToMinimumLevel: LogEventLevel.Information,
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 10,
+                    fileSizeLimitBytes: 50 * 1024 * 1024,
+                    rollOnFileSizeLimit: true,
+                    shared: true
+                )
+                .WriteTo.File(
+                    "Logs/Debug/ArcadeClient-Debug-.log",
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 10,
+                    retainedFileTimeLimit: TimeSpan.FromDays(3),
                     fileSizeLimitBytes: 50 * 1024 * 1024,
                     rollOnFileSizeLimit: true,
                     shared: true
@@ -125,6 +135,7 @@ namespace ArcademiaGameLauncher
                     services.AddSingleton<IAchievementOverlayCoordinator, AchievementOverlayCoordinator>();
                     services.AddSingleton<ISessionClaimCoordinator, SessionClaimCoordinator>();
                     services.AddSingleton<ISdkBrokerService, SdkBrokerService>();
+                    services.AddSingleton<IGameLogService, GameLogService>();
 
                     services.AddSingleton<Windows.MainWindow>();
                 })

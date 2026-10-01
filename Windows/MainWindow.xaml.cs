@@ -225,6 +225,7 @@ namespace ArcademiaGameLauncher.Windows
         private readonly IAchievementOverlayCoordinator _achievementOverlay;
         private readonly ISessionClaimCoordinator _sessionClaims;
         private readonly IAchievementCache _achievementCache;
+        private readonly IGameLogService _gameLogs;
 
         private readonly AchievementToastWindow _toastWindow;
         private readonly AchievementsOverlayWindow _overlayWindow;
@@ -246,6 +247,7 @@ namespace ArcademiaGameLauncher.Windows
             IAchievementOverlayCoordinator achievementOverlay,
             ISessionClaimCoordinator sessionClaims,
             IAchievementCache achievementCache,
+            IGameLogService gameLogs,
             JObject config,
             string applicationPath,
             ILoggerFactory loggerFactory
@@ -263,6 +265,7 @@ namespace ArcademiaGameLauncher.Windows
             _achievementOverlay = achievementOverlay;
             _sessionClaims = sessionClaims;
             _achievementCache = achievementCache;
+            _gameLogs = gameLogs;
             _config = config;
             _applicationPath = applicationPath;
 
@@ -423,6 +426,7 @@ namespace ArcademiaGameLauncher.Windows
                 _sessionTracking,
                 _claimCoordinator,
                 _sessionClaims,
+                _gameLogs,
                 loggerFactory.CreateLogger<Socket>()
             );
             _ = _socket.SafeReportStatus("Idle");
@@ -473,19 +477,19 @@ namespace ArcademiaGameLauncher.Windows
             // Set width and height of the logos
             double logoWidth = logicalScreenWidth * 0.06f;
 
-            // UoL_Logo
-            UoL_Logo.Width = logoWidth;
-            UoL_Logo.Height = logoWidth;
+            //// UoL_Logo
+            //UoL_Logo.Width = logoWidth;
+            //UoL_Logo.Height = logoWidth;
 
-            // intlab_Logo
-            intlab_Logo.Width = logoWidth;
-            intlab_Logo.Height = logoWidth;
-            Canvas.SetRight(intlab_Logo, 10 + logoWidth);
+            //// intlab_Logo
+            //intlab_Logo.Width = logoWidth;
+            //intlab_Logo.Height = logoWidth;
+            //Canvas.SetRight(intlab_Logo, 10 + logoWidth);
 
-            // CSS_Logo
-            CSS_Logo.Width = logoWidth;
-            CSS_Logo.Height = logoWidth;
-            Canvas.SetRight(CSS_Logo, 2 * (10 + logoWidth));
+            //// CSS_Logo
+            //CSS_Logo.Width = logoWidth;
+            //CSS_Logo.Height = logoWidth;
+            //Canvas.SetRight(CSS_Logo, 2 * (10 + logoWidth));
 
             // Show the Start Menu
             StartMenu.Visibility = Visibility.Visible;
@@ -1172,10 +1176,10 @@ namespace ArcademiaGameLauncher.Windows
                     CreditsPanel.Visibility = Visibility.Visible;
                     _isCreditsVisible = true;
 
-                    // Show the CreditsPanel Logos
-                    UoL_Logo.Visibility = Visibility.Visible;
-                    intlab_Logo.Visibility = Visibility.Visible;
-                    CSS_Logo.Visibility = Visibility.Visible;
+                    //// Show the CreditsPanel Logos
+                    //UoL_Logo.Visibility = Visibility.Visible;
+                    //intlab_Logo.Visibility = Visibility.Visible;
+                    //CSS_Logo.Visibility = Visibility.Visible;
 
                     // Set Canvas.Top of the CreditsPanel to the screen height
                     string logicalScreenHeight_str = TryFindResource("LogicalSizeHeight")
@@ -1222,10 +1226,10 @@ namespace ArcademiaGameLauncher.Windows
                     CreditsPanel.Visibility = Visibility.Collapsed;
                     _isCreditsVisible = false;
 
-                    // Hide the CreditsPanel Logos
-                    UoL_Logo.Visibility = Visibility.Collapsed;
-                    intlab_Logo.Visibility = Visibility.Collapsed;
-                    CSS_Logo.Visibility = Visibility.Collapsed;
+                    //// Hide the CreditsPanel Logos
+                    //UoL_Logo.Visibility = Visibility.Collapsed;
+                    //intlab_Logo.Visibility = Visibility.Collapsed;
+                    //CSS_Logo.Visibility = Visibility.Collapsed;
 
                     if (_logger.IsEnabled(LogLevel.Debug))
                         _logger.LogDebug("[Navigation] ExitButton_Click: End");
@@ -1371,13 +1375,24 @@ namespace ArcademiaGameLauncher.Windows
                     startInfo.Environment[SdkBrokerService.SessionVariable] =
                         sdkEnvironment.SessionId;
 
-                    if (File.Exists(Path.Combine(startInfo.WorkingDirectory, "UnityPlayer.dll")))
+                    var isUnity = File.Exists(
+                        Path.Combine(startInfo.WorkingDirectory, "UnityPlayer.dll")
+                    );
+                    if (isUnity)
                     {
                         startInfo.ArgumentList.Add("-window-mode");
                         startInfo.ArgumentList.Add("borderless");
                     }
 
                     var launchingGame = _currentGameWorkingList[_currentlySelectedGameIndex];
+                    _gameLogs.Prepare(
+                        startInfo,
+                        sdkSessionId,
+                        (int)launchingGame["Id"],
+                        launchingGame["Name"]?.ToString(),
+                        launchingGame["VersionNumber"]?.ToString(),
+                        isUnity
+                    );
                     _achievementSession.BeginSession(
                         sdkSessionId,
                         (int)launchingGame["Id"],
@@ -1388,9 +1403,11 @@ namespace ArcademiaGameLauncher.Windows
                     try
                     {
                         _currentlyRunningProcess = startedProcess = Process.Start(startInfo);
+                        _gameLogs.Attach(startedProcess);
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        _gameLogs.StartFailed(ex);
                         _sdkBroker.Stop();
                         throw;
                     }

@@ -17,6 +17,7 @@ namespace ArcademiaGameLauncher.Utils
         private readonly ISessionTrackingService _sessionTracking;
         private readonly IClaimCoordinator _claims;
         private readonly ISessionClaimCoordinator _sessionClaims;
+        private readonly IGameLogService _gameLogs;
         private readonly HubConnection _hub;
         private readonly CancellationTokenSource _heartbeatCts = new();
         private readonly ILogger<Socket> _logger;
@@ -34,10 +35,12 @@ namespace ArcademiaGameLauncher.Utils
             ISessionTrackingService sessionTracking,
             IClaimCoordinator claims,
             ISessionClaimCoordinator sessionClaims,
+            IGameLogService gameLogs,
             ILogger<Socket> logger
         )
         {
             _sessionClaims = sessionClaims;
+            _gameLogs = gameLogs;
             _mainWindow = mainWindow;
             _sfxPlayer = sfxPlayer;
             _sessionTracking = sessionTracking;
@@ -263,6 +266,44 @@ namespace ArcademiaGameLauncher.Utils
                 }
             );
 
+            _hub.On<string, int, string>(
+                "DeleteGameLogSession",
+                (token, gameId, session) =>
+                {
+                    _logger.LogInformation(
+                        "[SignalR] Received DeleteGameLogSession for GameId {GameId}: {Session}",
+                        gameId,
+                        session
+                    );
+                    _ = Task.Run(() => _gameLogs.DeleteSessionAsync(token, gameId, session));
+                }
+            );
+
+            _hub.On<string, int>(
+                "ListGameLogs",
+                (token, gameId) =>
+                {
+                    _logger.LogInformation(
+                        "[SignalR] Received ListGameLogs for GameId {GameId}",
+                        gameId
+                    );
+                    _ = Task.Run(() => _gameLogs.ListAsync(token, gameId));
+                }
+            );
+
+            _hub.On<string, int, string>(
+                "UploadGameLogFile",
+                (token, gameId, path) =>
+                {
+                    _logger.LogInformation(
+                        "[SignalR] Received UploadGameLogFile for GameId {GameId}: {Path}",
+                        gameId,
+                        path
+                    );
+                    _ = Task.Run(() => _gameLogs.UploadFileAsync(token, gameId, path));
+                }
+            );
+
             _hub.On<RegisteredPayload>(
                 "Registered",
                 payload =>
@@ -270,6 +311,7 @@ namespace ArcademiaGameLauncher.Utils
                     _machineId = payload.MachineId;
                     _siteId = payload.SiteId;
                     _machineName = payload.MachineName ?? "Unknown";
+                    _gameLogs.MachineName = _machineName;
 
                     _logger.LogInformation(
                         "[SignalR] Registered as '{MachineName}' (ID: {MachineId}, Site: {SiteId})",

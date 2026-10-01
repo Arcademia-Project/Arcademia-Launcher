@@ -69,49 +69,11 @@
       ]
     },
     {
-      "Type": "Heading",
-      "Value": "UI / UX Support",
-      "Subheadings": [
-        {
-          "Value": "Alex Dickinson",
-          "Colour": "White"
-        }
-      ]
-    },
-    {
-      "Type": "Heading",
-      "Value": "Original Cabinet Design",
-      "Subheadings": [
-        {
-          "Value": "Chris Headleand",
-          "Colour": "White"
-        }
-      ]
-    },
-    {
-      "Type": "Heading",
-      "Value": "Original Cabinet Build",
-      "Subheadings": [
-        {
-          "Value": "Chris Headleand",
-          "Colour": "White"
-        },
-        {
-          "Value": "Jeff Pashley",
-          "Colour": "White"
-        },
-        {
-          "Value": "Alex Chapman",
-          "Colour": "White"
-        }
-      ]
-    },
-    {
       "Type": "Break"
     },
     {
       "Type": "Title",
-      "Value": "Arcademia",
+      "Value": "Arcademia (Lincoln, UK)",
       "Subtitle": "(2022-2024)"
     },
     {
@@ -245,7 +207,7 @@
     },
     {
       "Type": "Title",
-      "Value": "The Research Arcade",
+      "Value": "The Research Arcade (Lincoln, UK)",
       "Subtitle": "(2018-2022)"
     },
     {

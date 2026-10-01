@@ -17,7 +17,7 @@
         Height="{DynamicResource {x:Static SystemParameters.PrimaryScreenHeightKey}}">
     <!-- Declare the Launcher Version, Global Font and ToggleButton style -->
     <Window.Resources>
-        <System:String x:Key="LauncherVersion">[v2.9.5-26 Release Build]</System:String>
+        <System:String x:Key="LauncherVersion">[v2.10.0-26 Release Build]</System:String>
         <System:String x:Key="YearStyle">yyyy</System:String>
         <System:Double x:Key="LogicalSizeWidth">1920</System:Double>
         <System:Double x:Key="LogicalSizeHeight">1080</System:Double>
@@ -567,29 +567,15 @@
                             <RowDefinition Height="1*"/>
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0"
-                                   Text="[Research-Arcade-Launcher]"
+                                   Text="[Arcademia-Launcher]"
                                    Foreground="#777"
                                    FontSize="8"
                                    Style="{StaticResource Early GameBoy}"
                                    VerticalAlignment="Top"
                                    HorizontalAlignment="Left"/>
                         <TextBlock Grid.Row="1"
-                                   Text="  Developed by Matthew Freeman"
+                                   Text="  Developed by Malphatt for Arcademia"
                                    Foreground="#777"
-                                   FontSize="8"
-                                   Style="{StaticResource Early GameBoy}"
-                                   VerticalAlignment="Top"
-                                   HorizontalAlignment="Left"/>
-                        <TextBlock Grid.Row="2"
-                                   Text="Based on [arcade-ui-kiosk]"
-                                   Foreground="#444"
-                                   FontSize="8"
-                                   Style="{StaticResource Early GameBoy}"
-                                   VerticalAlignment="Top"
-                                   HorizontalAlignment="Left"/>
-                        <TextBlock Grid.Row="3"
-                                   Text="  Developed by Benjamin Williams"
-                                   Foreground="#444"
                                    FontSize="8"
                                    Style="{StaticResource Early GameBoy}"
                                    VerticalAlignment="Top"
@@ -614,6 +600,7 @@
                               Canvas.Top="{StaticResource LogicalSizeHeight}"
                               Width="{Binding ElementName=HomeMenuImageArea, Path=ActualWidth}"
                               Margin="50,0,0,0"/>
+                        <!-- Logos (Unused)
                         <Image x:Name="UoL_Logo"
                                Source="/Assets/Images/uolwhite.png"
                                Visibility="Collapsed"
@@ -638,6 +625,7 @@
                                Canvas.Bottom="10"
                                Canvas.Right="330"
                                Stretch="Uniform"/>
+                        -->
                     </Canvas>
                 </Grid>
             </Grid>

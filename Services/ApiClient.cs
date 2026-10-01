@@ -16,6 +16,13 @@ namespace ArcademiaGameLauncher.Services
     {
         HttpClient Http { get; }
 
+        Task UploadGameLogsAsync(
+            string token,
+            Stream archive,
+            CancellationToken cancellationToken,
+            string contentType = "application/zip"
+        );
+
         Task<ControllerMapping> GetControllerMappingAsync(CancellationToken cancellationToken);
         Task<Stream> GetSiteLogoAsync(CancellationToken cancellationToken);
         Task<string> GetLatestUpdaterVersionAsync(
@@ -115,6 +122,30 @@ namespace ArcademiaGameLauncher.Services
     {
         private readonly HttpClient _http = http;
         public HttpClient Http => _http;
+
+        public async Task UploadGameLogsAsync(
+            string token,
+            Stream archive,
+            CancellationToken cancellationToken,
+            string contentType = "application/zip"
+        )
+        {
+            var url =
+                $"/api/GameLogs/Machine/Upload/{Uri.EscapeDataString(token)}"
+                + (archive == null ? "?empty=true" : "");
+
+            using HttpContent content =
+                archive == null ? new ByteArrayContent([]) : new StreamContent(archive);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                contentType
+            );
+
+            using var response = await _http.PostAsync(url, content, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException(
+                    $"Game log upload failed: {(int)response.StatusCode} {response.ReasonPhrase}"
+                );
+        }
 
         public async Task<ControllerMapping> GetControllerMappingAsync(
             CancellationToken cancellationToken
