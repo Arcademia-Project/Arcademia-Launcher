@@ -1698,8 +1698,7 @@ namespace ArcademiaGameLauncher.Windows
                 }
                 catch { }
 
-                bool managedByUpdater =
-                    Process.GetProcessesByName("Research-Arcade-Updater").Length > 0;
+                bool managedByUpdater = UpdaterProcesses().Length > 0;
 
                 string exePath =
                     Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
@@ -2767,17 +2766,25 @@ namespace ArcademiaGameLauncher.Windows
             }
 
             // Find the Updater process and close it
-            Process[] processes = Process.GetProcessesByName("Research-Arcade-Updater");
-            foreach (Process process in processes)
+            foreach (Process process in UpdaterProcesses())
                 process.Kill();
         }
+
+        private static readonly string[] UpdaterProcessNames = ["Arcademia-Updater", "Research-Arcade-Updater"];
+
+        private static Process[] UpdaterProcesses() =>
+            UpdaterProcessNames.SelectMany(Process.GetProcessesByName).ToArray();
 
         private void Updater_RelaunchUpdater(object sender, EventArgs e)
         {
             // Start the new updater
-            Process.Start(
-                Path.Combine(Directory.GetCurrentDirectory(), "Research-Arcade-Updater.exe")
-            );
+            var updaterPath = UpdaterProcessNames
+                .Select(name => Path.Combine(Directory.GetCurrentDirectory(), name + ".exe"))
+                .FirstOrDefault(File.Exists);
+            if (updaterPath != null)
+                Process.Start(updaterPath);
+            else
+                _logger.LogError("[Updater] Couldn't find the updater to relaunch it.");
 
             RestartLauncher();
         }

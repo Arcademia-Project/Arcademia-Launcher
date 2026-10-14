@@ -127,7 +127,9 @@ namespace ArcademiaGameLauncher.Services
         private readonly string _applicationPath;
         private readonly string _updaterDir;
         private readonly string _gamesDir;
-        private const string UpdaterExeName = "Research-Arcade-Updater.exe";
+        private const string UpdaterExeName = "Arcademia-Updater.exe";
+        private const string LegacyUpdaterExeName = "Research-Arcade-Updater.exe";
+        private static readonly string[] UpdaterExeNames = [UpdaterExeName, LegacyUpdaterExeName];
         private static readonly string[] UpdaterBinaryPatterns =
         [
             "*.dll",
@@ -460,13 +462,13 @@ namespace ArcademiaGameLauncher.Services
                 )
                     await zipStream.CopyToAsync(fileStream, cancellationToken);
 
-                ValidatePackage(zipFilePath, UpdaterExeName);
+                ValidatePackage(zipFilePath, UpdaterExeNames);
 
                 TryDeleteDirectory(stagingDir);
                 Directory.CreateDirectory(stagingDir);
                 new FastZip().ExtractZip(zipFilePath, stagingDir, null);
 
-                if (!File.Exists(Path.Combine(stagingDir, UpdaterExeName)))
+                if (!UpdaterExeNames.Any(name => File.Exists(Path.Combine(stagingDir, name))))
                     throw new InvalidDataException($"The updater package does not contain {UpdaterExeName}.");
 
                 return stagingDir;
@@ -493,7 +495,10 @@ namespace ArcademiaGameLauncher.Services
         {
             try
             {
-                if (File.Exists(Path.Combine(_updaterDir, UpdaterExeName)) && File.Exists(UpdaterVersionRecordPath))
+                if (
+                    UpdaterExeNames.Any(name => File.Exists(Path.Combine(_updaterDir, name)))
+                    && File.Exists(UpdaterVersionRecordPath)
+                )
                 {
                     var version = JObject.Parse(File.ReadAllText(UpdaterVersionRecordPath))["Version"]?.ToString();
                     if (!string.IsNullOrWhiteSpace(version))
@@ -518,7 +523,7 @@ namespace ArcademiaGameLauncher.Services
             File.Move(temp, UpdaterVersionRecordPath, true);
         }
 
-        private static void ValidatePackage(string zipFilePath, string requiredEntry)
+        private static void ValidatePackage(string zipFilePath, string[] requiredEntries)
         {
             using var zip = new ZipFile(zipFilePath);
 
@@ -532,12 +537,12 @@ namespace ArcademiaGameLauncher.Services
                 if (Path.IsPathRooted(name) || name.Split('/').Contains(".."))
                     throw new InvalidDataException($"The package contains an unsafe path: {entry.Name}");
 
-                if (string.Equals(name, requiredEntry, StringComparison.OrdinalIgnoreCase))
+                if (requiredEntries.Any(required => string.Equals(name, required, StringComparison.OrdinalIgnoreCase)))
                     hasRequiredEntry = true;
             }
 
             if (!hasRequiredEntry)
-                throw new InvalidDataException($"The package does not contain {requiredEntry}.");
+                throw new InvalidDataException($"The package does not contain {requiredEntries[0]}.");
         }
 
         private static async Task WaitForUpdaterExitAsync()
@@ -545,9 +550,9 @@ namespace ArcademiaGameLauncher.Services
             var deadline = DateTime.UtcNow.AddSeconds(10);
             while (DateTime.UtcNow < deadline)
             {
-                var running = Process.GetProcessesByName(
-                    Path.GetFileNameWithoutExtension(UpdaterExeName)
-                );
+                var running = UpdaterExeNames
+                    .SelectMany(name => Process.GetProcessesByName(Path.GetFileNameWithoutExtension(name)))
+                    .ToArray();
                 bool anyRunning = running.Any(p => !p.HasExited);
                 foreach (var process in running)
                     process.Dispose();
