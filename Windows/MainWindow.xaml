@@ -17,7 +17,7 @@
         Height="{DynamicResource {x:Static SystemParameters.PrimaryScreenHeightKey}}">
     <!-- Declare the Launcher Version, Global Font and ToggleButton style -->
     <Window.Resources>
-        <System:String x:Key="LauncherVersion">[v2.10.0-26 Release Build]</System:String>
+        <System:String x:Key="LauncherVersion">[v2.10.1-26 Release Build]</System:String>
         <System:String x:Key="YearStyle">yyyy</System:String>
         <System:Double x:Key="LogicalSizeWidth">1920</System:Double>
         <System:Double x:Key="LogicalSizeHeight">1080</System:Double>
@@ -2137,6 +2137,111 @@
                                    HorizontalAlignment="Right"
                                    Style="{StaticResource Early GameBoy}"/>
                     </Grid>
+                </Grid>
+                <!-- Quarantine Warning -->
+                <Grid x:Name="QuarantineWarning"
+                      Grid.ColumnSpan="2"
+                      Panel.ZIndex="100"
+                      Visibility="Collapsed"
+                      Background="#E6000000">
+                    <Border Width="1360"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Background="Black"
+                            BorderBrush="Red"
+                            BorderThickness="6"
+                            Padding="70,60">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal"
+                                        HorizontalAlignment="Center">
+                                <Grid Width="84"
+                                      Height="74"
+                                      Margin="0,0,30,0"
+                                      VerticalAlignment="Center">
+                                    <Path Data="M 42,0 L 84,74 L 0,74 Z"
+                                          Fill="Red"/>
+                                    <TextBlock Text="!"
+                                               Foreground="Black"
+                                               FontSize="40"
+                                               Style="{StaticResource Early GameBoy}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="6,0,0,6"/>
+                                </Grid>
+                                <TextBlock Text="Quarantined Game"
+                                           Foreground="Red"
+                                           FontSize="44"
+                                           Style="{StaticResource Early GameBoy}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock x:Name="QuarantineWarningGame"
+                                       Text="GameName"
+                                       Foreground="White"
+                                       FontSize="30"
+                                       Margin="0,50,0,0"
+                                       TextAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Style="{StaticResource Early GameBoy}"/>
+                            <TextBlock Foreground="White"
+                                       FontSize="24"
+                                       LineHeight="46"
+                                       Margin="0,50,0,0"
+                                       TextAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Style="{StaticResource Early GameBoy}">
+                                <Run Text="This game"/>
+                                <Run Text="may not work properly"
+                                     Foreground="Red"/>
+                                <Run Text="or is still experimental."/>
+                            </TextBlock>
+                            <TextBlock Foreground="White"
+                                       FontSize="24"
+                                       LineHeight="46"
+                                       Margin="0,30,0,0"
+                                       TextAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Style="{StaticResource Early GameBoy}">
+                                <Run Text="If it gets stuck,"/>
+                                <Run Text="hold Exit for 3 seconds"
+                                     Foreground="Red"/>
+                                <Run Text="to close it."/>
+                            </TextBlock>
+                            <Grid Margin="0,70,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0"
+                                        Margin="0,0,20,0"
+                                        Padding="20,24"
+                                        BorderBrush="#2ECC71"
+                                        BorderThickness="4">
+                                    <TextBlock Foreground="White"
+                                               FontSize="22"
+                                               TextAlignment="Center"
+                                               Style="{StaticResource Early GameBoy}">
+                                        <Run Text="A / Start"
+                                             Foreground="#2ECC71"/>
+                                        <Run Text="Play"/>
+                                    </TextBlock>
+                                </Border>
+                                <Border Grid.Column="1"
+                                        Margin="20,0,0,0"
+                                        Padding="20,24"
+                                        BorderBrush="#777"
+                                        BorderThickness="4">
+                                    <TextBlock Foreground="White"
+                                               FontSize="22"
+                                               TextAlignment="Center"
+                                               Style="{StaticResource Early GameBoy}">
+                                        <Run Text="B / Exit"
+                                             Foreground="#AAA"/>
+                                        <Run Text="Go Back"/>
+                                    </TextBlock>
+                                </Border>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </Grid>
 

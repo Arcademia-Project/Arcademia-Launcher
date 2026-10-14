@@ -42,6 +42,7 @@ namespace ArcademiaGameLauncher.Windows
         private readonly JObject _config;
         private JObject[] _gameInfoList;
         private JObject[] _currentGameWorkingList = [];
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, GameState> _updaterStates = new();
         private CollectionInfo[] _collectionInfoList = [];
         private CollectionInfo _activeCollectionInfo;
         private string _thumbnailCacheBuster = DateTime.Now.Ticks.ToString();
@@ -163,6 +164,7 @@ namespace ArcademiaGameLauncher.Windows
         bool _isInputMenuVisible = false;
         bool _isCreditsVisible = false;
         bool _isInfoWindowVisible = false;
+        volatile bool _isQuarantineWarningVisible = false;
         bool _isInfoWindowIdleVisible = false;
         bool _isInfoWindowForceExitVisible = false;
         bool _isUpdatingInputMenu = false;
@@ -844,12 +846,27 @@ namespace ArcademiaGameLauncher.Windows
         private void RefreshGameWorkingListFromSource()
         {
             RecomputeGameWorkingList();
-            _gameTitleStates = _isBrowsingCollectionsTopLevel
+            var states = _isBrowsingCollectionsTopLevel
                 ? Enumerable.Repeat(GameState.ready, _currentGameWorkingList.Length).ToArray()
                 : GameDatabaseService.ValidateGameExecutables(
                     _currentGameWorkingList,
                     _gameDirectoryPath
                 );
+
+            if (!_isBrowsingCollectionsTopLevel)
+                for (int i = 0; i < states.Length; i++)
+                {
+                    var name = _currentGameWorkingList[i]["Name"]?.ToString();
+                    if (
+                        states[i] != GameState.ready
+                        && name != null
+                        && _updaterStates.TryGetValue(name, out var updaterState)
+                        && updaterState != GameState.ready
+                    )
+                        states[i] = updaterState;
+                }
+
+            _gameTitleStates = states;
         }
 
         private void RefreshActiveCollectionReference()
@@ -1342,10 +1359,7 @@ namespace ArcademiaGameLauncher.Windows
             }
 
             // If the game info display is not showing the currently selected game, return
-            if (
-                !_showingDebouncedGame
-                || _gameTitleStates[_currentlySelectedGameIndex] != GameState.ready
-            )
+            if (!_showingDebouncedGame || !CanLaunchGame(_currentlySelectedGameIndex))
                 return;
 
             // Get the current game folder, game info, and game executable
@@ -2309,6 +2323,8 @@ namespace ArcademiaGameLauncher.Windows
                         _isSelectionMenuVisible = false;
                         InputMenu.Visibility = Visibility.Collapsed;
                         _isInputMenuVisible = false;
+                        QuarantineWarning.Visibility = Visibility.Collapsed;
+                        _isQuarantineWarningVisible = false;
 
                         ApplyWindowZOrder();
                     }
@@ -2429,6 +2445,8 @@ namespace ArcademiaGameLauncher.Windows
 
         private void Updater_GameStateChanged(object sender, GameStateChangedEventArgs e)
         {
+            _updaterStates[e.GameName] = e.NewState;
+
             int gameIndex = -1;
             for (int i = 0; i < _currentGameWorkingList.Length; i++)
             {
@@ -2508,6 +2526,7 @@ namespace ArcademiaGameLauncher.Windows
                     ["Tags"] = gameTagsArray,
                     ["NameOfExecutable"] = game.NameOfExecutable,
                     ["FolderName"] = game.FolderName,
+                    ["Quarantined"] = game.Quarantined,
                 };
                 gameInfoArray.Add(gameInfo);
             }
@@ -2609,6 +2628,8 @@ namespace ArcademiaGameLauncher.Windows
 
         private void Updater_GameUpdateCompleted(object sender, GameUpdateCompletedEventArgs e)
         {
+            _updaterStates[e.GameName] = GameState.ready;
+
             int gameIndex = -1;
             for (int i = 0; i < _currentGameWorkingList.Length; i++)
             {
@@ -2868,6 +2889,12 @@ namespace ArcademiaGameLauncher.Windows
             if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
                 return;
 
+            if (_isQuarantineWarningVisible)
+            {
+                HandleQuarantineWarningInput();
+                return;
+            }
+
             // Use a multiplier to speed up the selection update when the stick is held in either direction
             double multiplier = 1.00;
             if (_selectionUpdateIntervalCounter > 0)
@@ -3112,7 +3139,9 @@ namespace ArcademiaGameLauncher.Windows
                 else if (_isSelectionMenuVisible)
                 {
                     // If a game is selected, attempt to start the game
-                    if (_currentlySelectedGameIndex >= 0)
+                    if (_currentlySelectedGameIndex >= 0 && IsSelectedGameQuarantinedAndReady())
+                        ShowQuarantineWarning();
+                    else if (_currentlySelectedGameIndex >= 0)
                         Task.Run(() =>
                         {
                             StartButton_Click(null, null);
@@ -3151,6 +3180,91 @@ namespace ArcademiaGameLauncher.Windows
                     // Go back to the Home Menu
                     BackFromGameLibraryButton_Click(null, null);
                 }
+            }
+        }
+
+        private bool CanLaunchGame(int index)
+        {
+            var list = _currentGameWorkingList;
+            var states = _gameTitleStates;
+            if (list == null || states == null || index < 0 || index >= list.Length || index >= states.Length)
+                return false;
+            if (states[index] != GameState.ready)
+                return false;
+
+            var folderName = list[index]["FolderName"]?.ToString();
+            if (_updater.IsInstalling(folderName))
+                return false;
+
+            return GameDatabaseService.IsInstalled(
+                _gameDirectoryPath,
+                folderName,
+                list[index]["NameOfExecutable"]?.ToString()
+            );
+        }
+
+        private bool IsSelectedGameQuarantinedAndReady()
+        {
+            if (
+                _isBrowsingCollectionsTopLevel
+                || !_showingDebouncedGame
+                || !CanLaunchGame(_currentlySelectedGameIndex)
+            )
+                return false;
+
+            return (bool?)_currentGameWorkingList[_currentlySelectedGameIndex]["Quarantined"] == true;
+        }
+
+        private void ShowQuarantineWarning()
+        {
+            var gameName = _currentGameWorkingList[_currentlySelectedGameIndex]["Name"]?.ToString();
+            _isQuarantineWarningVisible = true;
+            _logger.LogInformation("[Quarantine] Showing the warning for {GameName}", gameName);
+
+            Application.Current?.Dispatcher?.InvokeAsync(() =>
+            {
+                QuarantineWarningGame.Text = gameName ?? "";
+                QuarantineWarning.Visibility = Visibility.Visible;
+            });
+        }
+
+        private void HideQuarantineWarning()
+        {
+            _isQuarantineWarningVisible = false;
+            Application.Current?.Dispatcher?.InvokeAsync(() =>
+                QuarantineWarning.Visibility = Visibility.Collapsed
+            );
+        }
+
+        private void HandleQuarantineWarningInput()
+        {
+            if (_timeSinceLastButton <= 250)
+                return;
+
+            if (
+                _controllerManager.GetEitherButtonDownState(ControllerState.ControllerActions.Start)
+                || _controllerManager.GetEitherButtonDownState(ControllerState.ControllerActions.A)
+            )
+            {
+                _timeSinceLastButton = 0;
+                HideQuarantineWarning();
+                if (!CanLaunchGame(_currentlySelectedGameIndex))
+                {
+                    _logger.LogWarning(
+                        "[Quarantine] The game stopped being launchable while the warning was open, so it wasn't started"
+                    );
+                    return;
+                }
+                _logger.LogInformation("[Quarantine] Player chose to play the quarantined game");
+                Task.Run(() => StartButton_Click(null, null));
+            }
+            else if (
+                _controllerManager.GetEitherButtonDownState(ControllerState.ControllerActions.Exit)
+                || _controllerManager.GetEitherButtonDownState(ControllerState.ControllerActions.B)
+            )
+            {
+                _timeSinceLastButton = 0;
+                HideQuarantineWarning();
             }
         }
 
@@ -3527,7 +3641,7 @@ namespace ArcademiaGameLauncher.Windows
                             if (_currentlySelectedGameIndex != index)
                                 return;
 
-                            StartButton.IsChecked = true;
+                            StyleStartButtonState(index);
 
                             // Set the Game Thumbnail
                             SetImageSource(
@@ -3666,8 +3780,20 @@ namespace ArcademiaGameLauncher.Windows
                 _logger.LogInformation("[UI] UpdateGameInfoDisplay: End");
         }
 
-        public void StyleStartButtonState(int _index) =>
-            StyleStartButtonState(_gameTitleStates[_index]);
+        public void StyleStartButtonState(int _index)
+        {
+            var states = _gameTitleStates;
+            if (states == null || _index < 0 || _index >= states.Length)
+                return;
+
+            var state = states[_index];
+            if (state == GameState.ready && !_isBrowsingCollectionsTopLevel && !CanLaunchGame(_index))
+                state = _updater.IsInstalling(_currentGameWorkingList[_index]["FolderName"]?.ToString())
+                    ? GameState.downloadingGame
+                    : GameState.fetchingInfo;
+
+            StyleStartButtonState(state);
+        }
 
         private static readonly SolidColorBrush _fillChecking = new(
             Color.FromRgb(0xFF, 0xC1, 0x07)
@@ -3707,6 +3833,11 @@ namespace ArcademiaGameLauncher.Windows
                     {
                         if (_logger.IsEnabled(LogLevel.Debug))
                             _logger.LogDebug("[UI] StyleStartButtonState: Start");
+
+                        if (_currentlySelectedGameIndex < 0)
+                            return;
+
+                        StartButton.IsEnabled = true;
 
                         if (isBrowsingCollections)
                         {

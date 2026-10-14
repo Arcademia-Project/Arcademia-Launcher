@@ -28,6 +28,7 @@ namespace ArcademiaGameLauncher.Services
         Task CheckUpdaterAndUpdateAsync(CancellationToken cancellationToken);
         Task CheckGamesAndUpdateAsync(CancellationToken cancellationToken);
         Task CheckControllerMappingAsync(CancellationToken cancellationToken);
+        bool IsInstalling(string folderName);
     }
 
     public class GameStateChangedEventArgs(GameState newState, string gameName)
@@ -69,6 +70,7 @@ namespace ArcademiaGameLauncher.Services
         public Tag[] Tags { get; } = game.Tags?.ToArray() ?? [];
         public string NameOfExecutable { get; } = game.NameOfExecutable;
         public string FolderName { get; } = game.FolderName;
+        public bool Quarantined { get; } = game.Quarantined;
     }
 
     public class UpdaterService : IUpdaterService
@@ -613,10 +615,30 @@ namespace ArcademiaGameLauncher.Services
             catch { }
         }
 
+        private readonly ConcurrentDictionary<string, byte> _installing = new(
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        public bool IsInstalling(string folderName) =>
+            !string.IsNullOrEmpty(folderName) && _installing.ContainsKey(folderName);
+
         private async Task DownloadGameAndExtractAsync(
             GameInfo game,
             CancellationToken cancellationToken
         )
+        {
+            _installing[game.FolderName] = 0;
+            try
+            {
+                await InstallGameAsync(game, cancellationToken);
+            }
+            finally
+            {
+                _installing.TryRemove(game.FolderName, out _);
+            }
+        }
+
+        private async Task InstallGameAsync(GameInfo game, CancellationToken cancellationToken)
         {
             if (_logger.IsEnabled(LogLevel.Information))
                 _logger.LogInformation(
@@ -652,18 +674,35 @@ namespace ArcademiaGameLauncher.Services
                         game.Name
                     );
 
-                // Replace the game directory with a clean copy of the new version
+                // Unpack into a staging folder, then swap it in so a half-extracted game is never launchable
+                var stagingDir = gameDir + ".staging";
+                TryDeleteDirectory(stagingDir);
+                Directory.CreateDirectory(stagingDir);
+
+                FastZip fastZip = new();
+                fastZip.ExtractZip(zipFilePath, stagingDir, null);
+
+                if (!File.Exists(Path.Combine(stagingDir, game.NameOfExecutable)))
+                    throw new InvalidDataException(
+                        $"The downloaded game does not contain {game.NameOfExecutable}."
+                    );
+
+                File.WriteAllText(
+                    Path.Combine(stagingDir, Path.GetFileName(GetInstalledVersionPath(game))),
+                    game.VersionNumber
+                );
+
                 var markerPath = GetInstalledVersionPath(game);
                 if (File.Exists(markerPath))
                     File.Delete(markerPath);
                 if (Directory.Exists(gameDir))
                     Directory.Delete(gameDir, true);
-                Directory.CreateDirectory(gameDir);
-
-                FastZip fastZip = new();
-                fastZip.ExtractZip(zipFilePath, gameDir, null);
-
-                File.WriteAllText(markerPath, game.VersionNumber);
+                Directory.Move(stagingDir, gameDir);
+            }
+            catch
+            {
+                TryDeleteDirectory(gameDir + ".staging");
+                throw;
             }
             finally
             {

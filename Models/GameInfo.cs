@@ -20,5 +20,7 @@ namespace ArcademiaGameLauncher.Models
         public string FolderName { get; set; } = null!;
 
         public DateTime? UploadedAt { get; set; }
+
+        public bool Quarantined { get; set; }
     }
 }

@@ -39,21 +39,29 @@ namespace ArcademiaGameLauncher.Services
                 string folderName = gameInfoList[i]["FolderName"]?.ToString();
                 string executableName = gameInfoList[i]["NameOfExecutable"]?.ToString();
 
-                if (
-                    !string.IsNullOrEmpty(folderName)
-                    && !string.IsNullOrEmpty(executableName)
-                    && File.Exists(Path.Combine(gameDirectoryPath, folderName, executableName))
-                )
+                if (IsInstalled(gameDirectoryPath, folderName, executableName))
                 {
                     gameTitleStates[i] = GameState.ready;
                 }
                 else
                 {
-                    gameTitleStates[i] = GameState.failed;
+                    gameTitleStates[i] = GameState.fetchingInfo;
                 }
             }
 
             return gameTitleStates;
         }
+
+        public static bool IsInstalled(
+            string gameDirectoryPath,
+            string? folderName,
+            string? executableName
+        ) =>
+            !string.IsNullOrEmpty(folderName)
+            && !string.IsNullOrEmpty(executableName)
+            && File.Exists(Path.Combine(gameDirectoryPath, folderName, executableName))
+            && File.Exists(Path.Combine(gameDirectoryPath, folderName, InstalledMarkerName));
+
+        public const string InstalledMarkerName = ".arcademia-version";
     }
 }
