@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ArcademiaGameLauncher.Services;
 using ArcademiaGameLauncher.Windows;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -70,7 +71,12 @@ namespace ArcademiaGameLauncher.Utils
             WireServerEvents();
 
             // Register transport so the session service can invoke hub methods directly
-            _sessionTracking.RegisterTransport(InvokeSessionStartAsync, InvokeSessionEndAsync);
+            _sessionTracking.RegisterTransport(
+                InvokeSessionStartAsync,
+                InvokeSessionEndAsync,
+                InvokeSessionActivityAsync,
+                InvokeSessionRatingAsync
+            );
 
             _ = ConnectAndStartHeartbeat();
         }
@@ -351,6 +357,26 @@ namespace ArcademiaGameLauncher.Utils
                 launcherStartedAtUtc
             );
             _logger.LogDebug("[SignalR] SessionStart sent: {ExternalId}", externalId);
+        }
+
+        public Task InvokeSessionActivityAsync(string externalId, string activityJson) =>
+            InvokeOptionalAsync("SessionActivity", externalId, activityJson);
+
+        public Task InvokeSessionRatingAsync(string externalId, int score) =>
+            InvokeOptionalAsync("SessionRating", externalId, score);
+
+        private async Task InvokeOptionalAsync(string method, string externalId, object value)
+        {
+            if (_hub.State != HubConnectionState.Connected)
+                throw new InvalidOperationException("Hub not connected");
+            try
+            {
+                await _hub.InvokeAsync(method, externalId, value);
+            }
+            catch (HubException ex) when (ex.Message.Contains("does not exist", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("[SignalR] The server doesn't support {Method} yet, so it was skipped", method);
+            }
         }
 
         public async Task InvokeSessionEndAsync(

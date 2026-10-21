@@ -13,9 +13,14 @@ namespace ArcademiaGameLauncher.Services
     {
         void RegisterTransport(
             Func<string, int, string, Task> invokeStart,
-            Func<string, string, string, Task> invokeEnd
+            Func<string, string, string, Task> invokeEnd,
+            Func<string, string, Task> invokeActivity,
+            Func<string, int, Task> invokeRating
         );
         string? CurrentExternalId { get; }
+        EndedSession? LastEndedSession { get; }
+        void RecordInput(int playerSlot);
+        Task RateSessionAsync(string externalId, int score);
         event Action SessionEnded;
         event Action<string, string> SessionEndedWithReason;
         Task StartSessionAsync(
@@ -62,6 +67,20 @@ namespace ArcademiaGameLauncher.Services
         public event Action<string, string> SessionEndedWithReason;
         private Func<string, int, string, Task>? _invokeStart;
         private Func<string, string, string, Task>? _invokeEnd;
+        private Func<string, string, Task>? _invokeActivity;
+        private Func<string, int, Task>? _invokeRating;
+
+        private static readonly TimeSpan IdleGap = TimeSpan.FromSeconds(30);
+        private readonly object _activityLock = new();
+        private readonly HashSet<int> _playerSlots = [];
+        private bool _tracking;
+        private long _activityStartedMs;
+        private long _lastInputMs;
+        private double _idleSeconds;
+        private double _longestIdleSeconds;
+        private int _idlePeriods;
+
+        public EndedSession? LastEndedSession { get; private set; }
 
         public SessionTrackingService(
             string applicationPath,
@@ -77,11 +96,81 @@ namespace ArcademiaGameLauncher.Services
 
         public void RegisterTransport(
             Func<string, int, string, Task> invokeStart,
-            Func<string, string, string, Task> invokeEnd
+            Func<string, string, string, Task> invokeEnd,
+            Func<string, string, Task> invokeActivity,
+            Func<string, int, Task> invokeRating
         )
         {
             _invokeStart = invokeStart;
             _invokeEnd = invokeEnd;
+            _invokeActivity = invokeActivity;
+            _invokeRating = invokeRating;
+        }
+
+        public void RecordInput(int playerSlot)
+        {
+            lock (_activityLock)
+            {
+                if (!_tracking)
+                    return;
+
+                var now = Environment.TickCount64;
+                var gap = (now - _lastInputMs) / 1000.0;
+                if (gap >= IdleGap.TotalSeconds)
+                {
+                    _idleSeconds += gap;
+                    _idlePeriods++;
+                    _longestIdleSeconds = Math.Max(_longestIdleSeconds, gap);
+                }
+                _lastInputMs = now;
+                _playerSlots.Add(playerSlot);
+            }
+        }
+
+        private void StartActivity()
+        {
+            lock (_activityLock)
+            {
+                _tracking = true;
+                _activityStartedMs = Environment.TickCount64;
+                _lastInputMs = _activityStartedMs;
+                _idleSeconds = 0;
+                _longestIdleSeconds = 0;
+                _idlePeriods = 0;
+                _playerSlots.Clear();
+            }
+        }
+
+        private SessionActivity? StopActivity()
+        {
+            lock (_activityLock)
+            {
+                if (!_tracking)
+                    return null;
+                _tracking = false;
+
+                var now = Environment.TickCount64;
+                var tail = (now - _lastInputMs) / 1000.0;
+                var idle = _idleSeconds;
+                var periods = _idlePeriods;
+                var longest = _longestIdleSeconds;
+                if (tail >= IdleGap.TotalSeconds)
+                {
+                    idle += tail;
+                    periods++;
+                    longest = Math.Max(longest, tail);
+                }
+                var duration = (now - _activityStartedMs) / 1000.0;
+
+                return new SessionActivity
+                {
+                    ActiveSeconds = (int)Math.Max(0, Math.Round(duration - idle)),
+                    IdleSeconds = (int)Math.Round(idle),
+                    IdlePeriods = periods,
+                    LongestIdleSeconds = (int)Math.Round(longest),
+                    Players = _playerSlots.Count,
+                };
+            }
         }
 
         public async Task StartSessionAsync(
@@ -95,6 +184,7 @@ namespace ArcademiaGameLauncher.Services
             );
             _startCompletion = startCompletion;
             _currentExternalId = externalId;
+            StartActivity();
 
             try
             {
@@ -136,11 +226,28 @@ namespace ArcademiaGameLauncher.Services
                 return;
 
             _currentExternalId = null;
+            var activity = StopActivity();
+            LastEndedSession = new EndedSession(externalId, endReason, activity?.ActiveSeconds);
             DeleteCurrentFile();
             SessionEnded?.Invoke();
             SessionEndedWithReason?.Invoke(externalId, endReason);
 
             var endedAt = DateTime.UtcNow;
+
+            if (activity is not null)
+            {
+                var activityJson = JsonConvert.SerializeObject(activity);
+                if (!await TryInvokeActivity(externalId, activityJson))
+                    await EnqueueAsync(
+                        new SessionQueueItem
+                        {
+                            Type = "Activity",
+                            ExternalId = externalId,
+                            ActivityJson = activityJson,
+                            QueuedAtUtc = DateTime.UtcNow.ToString("o"),
+                        }
+                    );
+            }
             _logger.LogInformation(
                 "[Session] Ended: {ExternalId} Reason={Reason}",
                 externalId,
@@ -156,6 +263,24 @@ namespace ArcademiaGameLauncher.Services
                         ExternalId = externalId,
                         EndReason = endReason,
                         EndedAtUtc = endedAt.ToString("o"),
+                        QueuedAtUtc = DateTime.UtcNow.ToString("o"),
+                    }
+                );
+        }
+
+        public async Task RateSessionAsync(string externalId, int score)
+        {
+            if (score is < 1 or > 5)
+                return;
+
+            _logger.LogInformation("[Session] Rated {ExternalId}: {Score}", externalId, score);
+            if (!await TryInvokeRating(externalId, score))
+                await EnqueueAsync(
+                    new SessionQueueItem
+                    {
+                        Type = "Rating",
+                        ExternalId = externalId,
+                        RatingScore = score,
                         QueuedAtUtc = DateTime.UtcNow.ToString("o"),
                     }
                 );
@@ -478,6 +603,16 @@ namespace ArcademiaGameLauncher.Services
                             await _invokeEnd!(item.ExternalId, item.EndReason, item.EndedAtUtc);
                             sent = true;
                         }
+                        else if (item.Type == "Activity" && !string.IsNullOrEmpty(item.ActivityJson))
+                        {
+                            await _invokeActivity!(item.ExternalId, item.ActivityJson);
+                            sent = true;
+                        }
+                        else if (item.Type == "Rating" && item.RatingScore.HasValue)
+                        {
+                            await _invokeRating!(item.ExternalId, item.RatingScore.Value);
+                            sent = true;
+                        }
                         else if (item.Type == "Score" && item.ScoreValue.HasValue)
                         {
                             using var cts = new CancellationTokenSource(ScoreSendTimeout);
@@ -636,6 +771,38 @@ namespace ArcademiaGameLauncher.Services
             catch (Exception)
             {
                 _logger.LogWarning("[Session] SessionStart invoke failed — will queue");
+                return false;
+            }
+        }
+
+        private async Task<bool> TryInvokeActivity(string externalId, string activityJson)
+        {
+            if (_invokeActivity is null)
+                return false;
+            try
+            {
+                await _invokeActivity(externalId, activityJson);
+                return true;
+            }
+            catch (Exception)
+            {
+                _logger.LogWarning("[Session] SessionActivity invoke failed — will queue");
+                return false;
+            }
+        }
+
+        private async Task<bool> TryInvokeRating(string externalId, int score)
+        {
+            if (_invokeRating is null)
+                return false;
+            try
+            {
+                await _invokeRating(externalId, score);
+                return true;
+            }
+            catch (Exception)
+            {
+                _logger.LogWarning("[Session] SessionRating invoke failed — will queue");
                 return false;
             }
         }

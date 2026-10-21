@@ -78,9 +78,10 @@ namespace ArcademiaGameLauncher.Utils
 
         private ControllerState AddSlot()
         {
+            var slot = _controllerStates.Count;
             var controllerState = new ControllerState(
-                _controllerStates.Count,
-                () => _mainWindow.Key_Pressed(),
+                slot,
+                () => _mainWindow.Key_Pressed(slot),
                 SendKey
             );
             controllerState.UpdateMapping(_mapping);

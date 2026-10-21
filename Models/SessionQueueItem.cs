@@ -13,6 +13,9 @@ namespace ArcademiaGameLauncher.Models
         public string? EndReason { get; set; }
         public string? EndedAtUtc { get; set; }
 
+        public string? ActivityJson { get; set; }
+        public int? RatingScore { get; set; }
+
         public string ScoreId { get; set; }
         public string BoardSlug { get; set; }
         public long? ScoreValue { get; set; }

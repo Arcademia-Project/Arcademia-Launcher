@@ -78,7 +78,7 @@ namespace ArcademiaGameLauncher.Windows
         private int _overlayIdleMs = 0;
         private int _overlayFocusCheckMs = 0;
 
-        private bool IsModalOverlayOpen => _overlayWindow.IsOpen || _sessionClaimWindow.IsOpen;
+        private bool IsModalOverlayOpen => _overlayWindow.IsOpen || _sessionClaimWindow.IsOpen || _ratingActive;
 
         private IntPtr _fittedGameWindow = IntPtr.Zero;
         private Int32Rect _fittedOriginalBounds;
@@ -232,6 +232,17 @@ namespace ArcademiaGameLauncher.Windows
         private readonly AchievementToastWindow _toastWindow;
         private readonly AchievementsOverlayWindow _overlayWindow;
         private readonly SessionClaimWindow _sessionClaimWindow;
+        private readonly RatingWindow _ratingWindow;
+        private static readonly TimeSpan RatingTimeout = TimeSpan.FromSeconds(12);
+        private const int RatingMinActiveSeconds = 60;
+        private bool _ratingsEnabled = true;
+        private bool _ratingActive;
+        private bool _ratingStickHeld;
+        private string _ratingSessionId;
+        private string _ratingEndReason;
+        private DateTime _ratingShownAt;
+        private DateTime _ratingLastInputAt;
+        private DateTime? _ratingThanksAt;
         private DateTime _sessionClaimShownAt;
         private int _overlayScrollCooldown;
         private bool _overlayScrollHeld;
@@ -318,6 +329,7 @@ namespace ArcademiaGameLauncher.Windows
             _toastWindow = new AchievementToastWindow(GetGameWindowHandle, PlayAchievementSound);
             _overlayWindow = new AchievementsOverlayWindow(GetGameWindowHandle);
             _sessionClaimWindow = new SessionClaimWindow();
+            _ratingWindow = new RatingWindow();
 
             _toastWindow.IsVisibleChanged += (_, _) => ApplyWindowZOrder();
             _infoWindow.IsVisibleChanged += (_, _) => ApplyWindowZOrder();
@@ -409,6 +421,9 @@ namespace ArcademiaGameLauncher.Windows
                 _noInputTimeout = _config.ContainsKey("NoInputTimeout_ms")
                     ? int.Parse(_config["NoInputTimeout_ms"].ToString())
                     : 120000;
+
+            if (_config != null && _config.ContainsKey("RatingPrompt"))
+                _ratingsEnabled = bool.TryParse(_config["RatingPrompt"].ToString(), out var ratingPrompt) && ratingPrompt;
 
             // Create the games directory if it doesn't exist
             if (!Directory.Exists(_gameDirectoryPath))
@@ -1469,8 +1484,10 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // Event Handlers
-        public void Key_Pressed()
+        public void Key_Pressed(int playerSlot = 0)
         {
+            _sessionTracking.RecordInput(playerSlot);
+
             // Keylogger for AFK Timer
             if (_afkTimerActive)
             {
@@ -1917,6 +1934,8 @@ namespace ArcademiaGameLauncher.Windows
                 IntPtr modalHandle = IntPtr.Zero;
                 if (_overlayWindow.IsOpen)
                     modalHandle = _overlayWindow.Handle;
+                else if (_ratingWindow.IsOpen)
+                    modalHandle = new WindowInteropHelper(_ratingWindow).Handle;
                 else if (_sessionClaimWindow.IsOpen)
                     modalHandle = new WindowInteropHelper(_sessionClaimWindow).Handle;
 
@@ -1943,6 +1962,8 @@ namespace ArcademiaGameLauncher.Windows
                             _overlayWindow.KeepOnTop();
                         if (_sessionClaimWindow.IsOpen)
                             _sessionClaimWindow.KeepOnTop();
+                        if (_ratingWindow.IsOpen)
+                            _ratingWindow.KeepOnTop();
                     },
                     System.Windows.Threading.DispatcherPriority.Background
                 );
@@ -2047,6 +2068,12 @@ namespace ArcademiaGameLauncher.Windows
                 }
             }
 
+            if (_ratingActive)
+            {
+                HandleRatingInput();
+                return;
+            }
+
             if (_sessionClaimWindow.IsOpen)
             {
                 if (
@@ -2110,7 +2137,7 @@ namespace ArcademiaGameLauncher.Windows
                             }
 
                             _ = _sessionTracking.EndSessionAsync("ForceExit");
-                            OfferSessionClaim("ForceExit");
+                            OfferRatingThenClaim("ForceExit");
                             _currentlyRunningProcess = null;
                             _ = _socket.SafeReportStatus("Idle");
 
@@ -2160,7 +2187,7 @@ namespace ArcademiaGameLauncher.Windows
                 ResetControllerStates();
                 _ = _socket.SafeReportStatus("Idle");
                 _ = _sessionTracking.EndSessionAsync("Natural");
-                OfferSessionClaim("Natural");
+                OfferRatingThenClaim("Natural");
                 _currentlyRunningProcess = null;
 
                 ApplyWindowZOrder();
@@ -2207,6 +2234,115 @@ namespace ArcademiaGameLauncher.Windows
             {
                 _logger.LogWarning(ex, "[Achievements] Could not play the achievement sound");
             }
+        }
+
+        private void OfferRatingThenClaim(string endReason)
+        {
+            var ended = _sessionTracking.LastEndedSession;
+            if (
+                !_ratingsEnabled
+                || ended is null
+                || ended.ActiveSeconds is not int active
+                || active < RatingMinActiveSeconds
+                || endReason is not ("Natural" or "ForceExit")
+            )
+            {
+                OfferSessionClaim(endReason);
+                return;
+            }
+
+            string gameName = "";
+            try
+            {
+                gameName = _currentGameWorkingList[_currentlySelectedGameIndex]["Name"].ToString();
+            }
+            catch { }
+
+            _ratingSessionId = ended.ExternalId;
+            _ratingEndReason = endReason;
+            _ratingShownAt = DateTime.UtcNow;
+            _ratingLastInputAt = _ratingShownAt;
+            _ratingThanksAt = null;
+            _ratingStickHeld = false;
+            _ratingActive = true;
+
+            Dispatcher?.InvokeAsync(() =>
+            {
+                _ratingWindow.ShowPrompt(gameName, this);
+                ApplyWindowZOrder();
+            });
+        }
+
+        private void HandleRatingInput()
+        {
+            _afkTimer = 0;
+            var now = DateTime.UtcNow;
+
+            if (_ratingThanksAt is DateTime thanksAt)
+            {
+                if (now - thanksAt > TimeSpan.FromMilliseconds(1200))
+                    CloseRating();
+                return;
+            }
+
+            if (now - _ratingShownAt < TimeSpan.FromMilliseconds(600))
+                return;
+
+            if (_controllerManager.GetEitherButtonDownState(ControllerState.ControllerActions.Exit))
+            {
+                CloseRating();
+                return;
+            }
+
+            var selected = _ratingWindow.Selected;
+            if (
+                selected > 0
+                && (
+                    _controllerManager.GetEitherButtonDownState(ControllerState.ControllerActions.A)
+                    || _controllerManager.GetEitherButtonDownState(ControllerState.ControllerActions.Start)
+                )
+            )
+            {
+                if (_ratingSessionId is not null)
+                    _ = _sessionTracking.RateSessionAsync(_ratingSessionId, selected);
+                _ratingThanksAt = now;
+                Dispatcher?.InvokeAsync(() => _ratingWindow.ShowThanks());
+                return;
+            }
+
+            var direction = _controllerManager.GetEitherLeftStickDirection()[0];
+            if (direction != 0)
+            {
+                _ratingLastInputAt = now;
+                if (!_ratingStickHeld)
+                    Dispatcher?.InvokeAsync(() => _ratingWindow.Move(direction));
+                _ratingStickHeld = true;
+            }
+            else
+                _ratingStickHeld = false;
+
+            var left = 1 - (now - _ratingLastInputAt).TotalMilliseconds / RatingTimeout.TotalMilliseconds;
+            if (left <= 0)
+                CloseRating();
+            else
+                Dispatcher?.InvokeAsync(() => _ratingWindow.SetTimeLeft(left));
+        }
+
+        private void CloseRating()
+        {
+            if (!_ratingActive)
+                return;
+            _ratingActive = false;
+            var endReason = _ratingEndReason ?? "Natural";
+            _ratingSessionId = null;
+            _ratingEndReason = null;
+
+            Dispatcher?.InvokeAsync(() =>
+            {
+                _ratingWindow.HidePrompt();
+                ApplyWindowZOrder();
+            });
+            OfferSessionClaim(endReason);
         }
 
         private void OfferSessionClaim(string endReason)
@@ -2274,7 +2410,7 @@ namespace ArcademiaGameLauncher.Windows
 
         private void HandleAFKCheck()
         {
-            if (_isClaimWindowVisible || _overlayWindow.IsOpen || _sessionClaimWindow.IsOpen || _sessionClaims.IsActive)
+            if (_isClaimWindowVisible || _overlayWindow.IsOpen || _sessionClaimWindow.IsOpen || _sessionClaims.IsActive || _ratingActive)
             {
                 _afkTimer = 0;
                 return;
@@ -2890,7 +3026,7 @@ namespace ArcademiaGameLauncher.Windows
             if (_isInfoWindowVisible)
                 return;
 
-            if (_sessionClaimWindow.IsOpen || _overlayWindow.IsOpen)
+            if (_sessionClaimWindow.IsOpen || _overlayWindow.IsOpen || _ratingActive)
                 return;
 
             if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
