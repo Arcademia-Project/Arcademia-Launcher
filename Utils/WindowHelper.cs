@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Windows;
-using System.Windows.Interop;
+using ArcademiaGameLauncher.Platform;
+using Avalonia;
+using Avalonia.Controls;
 
 namespace ArcademiaGameLauncher.Utils
 {
@@ -11,7 +12,36 @@ namespace ArcademiaGameLauncher.Utils
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
-        public static IntPtr ForegroundWindow() => GetForegroundWindow();
+        public static IntPtr ForegroundWindow() =>
+            OperatingSystem.IsWindows() ? GetForegroundWindow() : X11.ActiveWindow();
+
+        public static void CenterOver(Window child, Window owner, double fallbackWidth, double fallbackHeight)
+        {
+            double width = child.Bounds.Width > 0 ? child.Bounds.Width : child.Width;
+            double height = child.Bounds.Height > 0 ? child.Bounds.Height : child.Height;
+            if (double.IsNaN(width))
+                width = fallbackWidth;
+            if (double.IsNaN(height))
+                height = fallbackHeight;
+
+            var scaling = owner.RenderScaling;
+            child.Position = new PixelPoint(
+                owner.Position.X + (int)((owner.Bounds.Width - width) / 2 * scaling),
+                owner.Position.Y + (int)((owner.Bounds.Height - height) / 2 * scaling)
+            );
+        }
+
+        public static IntPtr HandleOf(Window window)
+        {
+            try
+            {
+                return window?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            }
+            catch
+            {
+                return IntPtr.Zero;
+            }
+        }
 
         [DllImport("user32.dll")]
         private static extern uint GetGuiResources(IntPtr hProcess, uint uiFlags);
@@ -21,6 +51,9 @@ namespace ArcademiaGameLauncher.Utils
 
         public static (uint GdiObjects, uint UserObjects) GetGdiUserHandleCounts()
         {
+            if (!OperatingSystem.IsWindows())
+                return (0, 0);
+
             using var currentProcess = Process.GetCurrentProcess();
             return (
                 GetGuiResources(currentProcess.Handle, GR_GDIOBJECTS),
@@ -69,7 +102,7 @@ namespace ArcademiaGameLauncher.Utils
 
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
-                var windowHandle = new WindowInteropHelper(window).Handle;
+                var windowHandle = HandleOf(window);
                 ForceForeground(windowHandle);
             });
         }
@@ -81,6 +114,13 @@ namespace ArcademiaGameLauncher.Utils
 
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
+                if (!OperatingSystem.IsWindows())
+                {
+                    X11.Activate(windowHandle);
+                    X11.KeepOnTop(windowHandle);
+                    return;
+                }
+
                 IntPtr foregroundWnd = GetForegroundWindow();
                 if (foregroundWnd != windowHandle)
                 {
@@ -152,7 +192,7 @@ namespace ArcademiaGameLauncher.Utils
 
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
-                var windowHandle = new WindowInteropHelper(window).Handle;
+                var windowHandle = HandleOf(window);
                 EnsureTopMost(windowHandle);
             });
         }
@@ -164,6 +204,12 @@ namespace ArcademiaGameLauncher.Utils
 
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
+                if (!OperatingSystem.IsWindows())
+                {
+                    X11.KeepOnTop(windowHandle);
+                    return;
+                }
+
                 SetWindowPos(
                     windowHandle,
                     HWND_TOPMOST,
@@ -183,7 +229,7 @@ namespace ArcademiaGameLauncher.Utils
 
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
-                var windowHandle = new WindowInteropHelper(window).Handle;
+                var windowHandle = HandleOf(window);
                 SendToBack(windowHandle);
             });
         }
@@ -195,6 +241,12 @@ namespace ArcademiaGameLauncher.Utils
 
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
+                if (!OperatingSystem.IsWindows())
+                {
+                    X11.Lower(windowHandle);
+                    return;
+                }
+
                 SetWindowPos(
                     windowHandle,
                     HWND_BOTTOM,
@@ -211,11 +263,9 @@ namespace ArcademiaGameLauncher.Utils
         {
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
-                IntPtr topHandle = top != null ? new WindowInteropHelper(top).Handle : IntPtr.Zero;
-                IntPtr middleHandle =
-                    middle != null ? new WindowInteropHelper(middle).Handle : IntPtr.Zero;
-                IntPtr bottomHandle =
-                    bottom != null ? new WindowInteropHelper(bottom).Handle : IntPtr.Zero;
+                IntPtr topHandle = HandleOf(top);
+                IntPtr middleHandle = HandleOf(middle);
+                IntPtr bottomHandle = HandleOf(bottom);
 
                 SetWindowOrder(topHandle, middleHandle, bottomHandle);
             });
@@ -229,6 +279,12 @@ namespace ArcademiaGameLauncher.Utils
         {
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
+                if (!OperatingSystem.IsWindows())
+                {
+                    X11.SetWindowOrder(topHandle, middleHandle, bottomHandle);
+                    return;
+                }
+
                 if (middleHandle != IntPtr.Zero && middleHandle != topHandle)
                 {
                     SetWindowPos(

@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
 
 namespace ArcademiaGameLauncher.Utils
 {
@@ -93,11 +93,11 @@ namespace ArcademiaGameLauncher.Utils
             if (textBlock == null || string.IsNullOrWhiteSpace(desiredText))
                 return;
 
-            if (textBlock.ActualWidth <= 0 || textBlock.ActualHeight <= 0)
+            if (textBlock.Bounds.Width <= 0 || textBlock.Bounds.Height <= 0)
             {
                 void Handler(object s, SizeChangedEventArgs e)
                 {
-                    if (textBlock.ActualWidth > 0 && textBlock.ActualHeight > 0)
+                    if (textBlock.Bounds.Width > 0 && textBlock.Bounds.Height > 0)
                     {
                         textBlock.SizeChanged -= Handler;
                         textBlock.FitTextToTextBlock(
@@ -115,8 +115,8 @@ namespace ArcademiaGameLauncher.Utils
 
             var key = new FitKey(
                 desiredText,
-                textBlock.ActualWidth,
-                textBlock.ActualHeight,
+                textBlock.Bounds.Width,
+                textBlock.Bounds.Height,
                 textBlock.FontFamily,
                 textBlock.FontStyle,
                 textBlock.FontWeight,
@@ -135,8 +135,8 @@ namespace ArcademiaGameLauncher.Utils
                 return;
             }
 
-            double availableWidth = textBlock.ActualWidth;
-            double availableHeight = textBlock.ActualHeight;
+            double availableWidth = textBlock.Bounds.Width;
+            double availableHeight = textBlock.Bounds.Height;
 
             Typeface typeface = new Typeface(
                 textBlock.FontFamily,
@@ -145,28 +145,25 @@ namespace ArcademiaGameLauncher.Utils
                 textBlock.FontStretch
             );
 
-            if (!typeface.TryGetGlyphTypeface(out GlyphTypeface glyph))
-                glyph = null;
+            var glyphHeight = TextMetrics.GlyphHeight(typeface);
 
             double GetLineHeight(double fontSize)
             {
-                if (glyph != null)
-                    return glyph.Height * fontSize;
+                if (glyphHeight is double height)
+                    return height * fontSize;
                 else
                     return fontSize;
             }
 
             bool TextFits(double fontSize)
             {
-                double dpiFactor = VisualTreeHelper.GetDpi(textBlock).PixelsPerDip;
                 var ft = new FormattedText(
                     desiredText,
                     CultureInfo.CurrentUICulture,
                     FlowDirection.LeftToRight,
                     typeface,
                     fontSize,
-                    Brushes.Black,
-                    dpiFactor
+                    Brushes.Black
                 )
                 {
                     MaxTextWidth = availableWidth,

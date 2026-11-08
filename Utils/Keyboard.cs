@@ -7,6 +7,12 @@ namespace ArcademiaGameLauncher.Utils
     {
         public void Send(ScanCodeShort a)
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                Platform.X11.SendKey(Platform.KeyState.ScanCodeToX11Keycode((short)a, IsExtendedKey(a)), true);
+                return;
+            }
+
             INPUT[] Inputs = new INPUT[1];
             INPUT Input = new()
             {
@@ -27,6 +33,12 @@ namespace ArcademiaGameLauncher.Utils
 
         public void Release(ScanCodeShort a)
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                Platform.X11.SendKey(Platform.KeyState.ScanCodeToX11Keycode((short)a, IsExtendedKey(a)), false);
+                return;
+            }
+
             INPUT[] Inputs = new INPUT[1];
             INPUT Input = new INPUT
             {

@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  APP: Arcademia-Launcher
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      number: ${{ steps.read.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Read version from the project
+        id: read
+        shell: bash
+        run: |
+          version=$(dotnet msbuild "$APP.csproj" -getProperty:Version)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "number=${version%%-*}" >> "$GITHUB_OUTPUT"
+          echo "Project version: $version"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the project version v$version"
+            exit 1
+          fi
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version="${{ steps.read.outputs.version }}"
+          number="${{ steps.read.outputs.number }}"
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "Release v$version already exists, uploading to it"
+          else
+            gh release create "v$version" --draft --target "$GITHUB_SHA" --title "v$version Release" --notes "Launcher version **$version**.
+
+          Drop both zips into Upload New Version on the manager's Software page. It reads the version (\`$number\`) and platform from each zip:
+          - \`win-x64\`: Windows cabinets
+          - \`linux-x64\`: Linux cabinets"
+          fi
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            self-contained: "false"
+          - os: ubuntu-latest
+            rid: linux-x64
+            self-contained: "true"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install the MinGW compiler for the Wine bridge
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mingw-w64-x86-64
+
+      - name: Publish
+        shell: bash
+        run: >
+          dotnet publish "$APP.csproj" -c Release
+          -r ${{ matrix.rid }}
+          --self-contained ${{ matrix.self-contained }}
+          -o publish
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path publish/* -DestinationPath "${{ env.APP }}-${{ needs.version.outputs.version }}-${{ matrix.rid }}.zip"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x "publish/$APP"
+          cd publish && zip -qr -X "../$APP-${{ needs.version.outputs.version }}-${{ matrix.rid }}.zip" .
+
+      - name: Upload to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release upload "v${{ needs.version.outputs.version }}" "$APP-${{ needs.version.outputs.version }}-${{ matrix.rid }}.zip" --clobber

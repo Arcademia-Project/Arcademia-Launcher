@@ -2,8 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Threading;
+using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace ArcademiaGameLauncher.Services
@@ -20,7 +19,7 @@ namespace ArcademiaGameLauncher.Services
         public DispatcherQueueService(ILogger<DispatcherQueueService> logger)
         {
             _logger = logger;
-            _timer = new DispatcherTimer(DispatcherPriority.Render)
+            _timer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher.UIThread)
             {
                 Interval = TimeSpan.FromMilliseconds(10),
             };

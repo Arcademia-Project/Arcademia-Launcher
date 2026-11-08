@@ -127,9 +127,11 @@ namespace ArcademiaGameLauncher.Services
         private readonly string _applicationPath;
         private readonly string _updaterDir;
         private readonly string _gamesDir;
-        private const string UpdaterExeName = "Arcademia-Updater.exe";
+        private static readonly string UpdaterExeName = OperatingSystem.IsWindows() ? "Arcademia-Updater.exe" : "Arcademia-Updater";
         private const string LegacyUpdaterExeName = "Research-Arcade-Updater.exe";
-        private static readonly string[] UpdaterExeNames = [UpdaterExeName, LegacyUpdaterExeName];
+        private static readonly string[] UpdaterExeNames = OperatingSystem.IsWindows()
+            ? [UpdaterExeName, LegacyUpdaterExeName]
+            : [UpdaterExeName];
         private static readonly string[] UpdaterBinaryPatterns =
         [
             "*.dll",
@@ -138,6 +140,7 @@ namespace ArcademiaGameLauncher.Services
             "*.deps.json",
             "*.runtimeconfig.json",
             "*.dll.config",
+            "*.so",
         ];
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _gameLocks = new(StringComparer.OrdinalIgnoreCase);
 
@@ -591,6 +594,20 @@ namespace ArcademiaGameLauncher.Services
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 File.Move(Path.Combine(stagingDir, relativePath), target, true);
             }
+
+            if (!OperatingSystem.IsWindows())
+                foreach (var name in UpdaterExeNames.Append("createdump"))
+                {
+                    var path = Path.Combine(_updaterDir, name);
+                    if (File.Exists(path))
+                        File.SetUnixFileMode(
+                            path,
+                            File.GetUnixFileMode(path)
+                                | UnixFileMode.UserExecute
+                                | UnixFileMode.GroupExecute
+                                | UnixFileMode.OtherExecute
+                        );
+                }
         }
 
         private static void DeleteWithRetry(string path)
@@ -785,6 +802,9 @@ namespace ArcademiaGameLauncher.Services
         {
             var gameDir = Path.GetFullPath(Path.Combine(_gamesDir, game.FolderName))
                 .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
+            if (!OperatingSystem.IsWindows())
+                return GameRunner.IsDirectoryInUse(gameDir);
 
             foreach (
                 var process in Process.GetProcessesByName(

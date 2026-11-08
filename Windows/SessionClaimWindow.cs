@@ -1,13 +1,13 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Interop;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using ArcademiaGameLauncher.Models;
 using ArcademiaGameLauncher.Utils;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using QRCoder;
 
 namespace ArcademiaGameLauncher.Windows
@@ -16,7 +16,7 @@ namespace ArcademiaGameLauncher.Windows
     {
         private const int MaxListed = 5;
 
-        private static readonly FontFamily PixelFont = new(AchievementVisuals.Pack("Fonts/"), "./#Press Start 2P");
+        private static readonly FontFamily PixelFont = AchievementVisuals.BundledFont;
 
         private readonly Grid _root;
         private readonly TextBlock _status;
@@ -31,13 +31,13 @@ namespace ArcademiaGameLauncher.Windows
 
         public SessionClaimWindow()
         {
-            WindowStyle = WindowStyle.None;
-            AllowsTransparency = true;
+            WindowDecorations = WindowDecorations.None;
+            TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
             Background = Brushes.Transparent;
             ShowInTaskbar = false;
             ShowActivated = false;
             Topmost = true;
-            ResizeMode = ResizeMode.NoResize;
+            CanResize = false;
             Width = 1200;
             Height = 700;
             Title = "Arcademia Claim";
@@ -60,7 +60,7 @@ namespace ArcademiaGameLauncher.Windows
             _root.Children.Add(middle);
 
             _qr = new Image { Width = 300, Height = 300 };
-            RenderOptions.SetBitmapScalingMode(_qr, BitmapScalingMode.NearestNeighbor);
+            RenderOptions.SetBitmapInterpolationMode(_qr, BitmapInterpolationMode.None);
             middle.Children.Add(new Border
             {
                 Width = 320,
@@ -91,13 +91,13 @@ namespace ArcademiaGameLauncher.Windows
             _root.Children.Add(_countdown);
         }
 
-        protected override void OnSourceInitialized(EventArgs e)
+        protected override void OnOpened(EventArgs e)
         {
-            base.OnSourceInitialized(e);
-            NativeWindows.MakeOverlay(new WindowInteropHelper(this).Handle, clickThrough: false);
+            base.OnOpened(e);
+            NativeWindows.MakeOverlay(WindowHelper.HandleOf(this), clickThrough: false);
         }
 
-        private static TextBlock Pixel(string text, double size, Brush brush) =>
+        private static TextBlock Pixel(string text, double size, IBrush brush) =>
             new()
             {
                 Text = text,
@@ -115,8 +115,8 @@ namespace ArcademiaGameLauncher.Windows
             _title.Text = offer.Unlocks.Count == 1 ? "Claim Your Achievement" : "Claim Your Achievements";
             _title.Foreground = Brushes.White;
             _qr.Opacity = 1;
-            _hint.Visibility = Visibility.Visible;
-            _countdown.Visibility = Visibility.Visible;
+            _hint.SetHidden(false);
+            _countdown.SetHidden(false);
             _status.Text = "Scan to add them to your Arcademia account";
             _status.Foreground = new SolidColorBrush(AchievementVisuals.Color(0xC9A0FF));
 
@@ -134,20 +134,14 @@ namespace ArcademiaGameLauncher.Windows
                     new Thickness(0, 10, 0, 0)
                 ));
 
-            if (owner is not null && owner.ActualWidth > 0)
-            {
-                Left = owner.Left + (owner.ActualWidth - Width) / 2;
-                Top = owner.Top + (owner.ActualHeight - Height) / 2;
-            }
+            if (owner is not null && owner.Bounds.Width > 0)
+                WindowHelper.CenterOver(this, owner, Width, Height);
             else
-            {
-                Left = (SystemParameters.PrimaryScreenWidth - Width) / 2;
-                Top = (SystemParameters.PrimaryScreenHeight - Height) / 2;
-            }
+                WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
             IsOpen = true;
             Show();
-            NativeWindows.KeepOnTop(new WindowInteropHelper(this).Handle);
+            NativeWindows.KeepOnTop(WindowHelper.HandleOf(this));
         }
 
         private static TextBlock Line(string text, double size, Color color, Thickness margin) =>
@@ -160,16 +154,16 @@ namespace ArcademiaGameLauncher.Windows
                 Margin = margin,
             };
 
-        private static FrameworkElement Row(SessionUnlock unlock)
+        private static Control Row(SessionUnlock unlock)
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 6) };
             var icon = AchievementVisuals.Icon(unlock.IconPath);
             if (icon is not null)
             {
                 var image = new Image { Source = icon, Width = 48, Height = 48, Stretch = Stretch.UniformToFill };
-                RenderOptions.SetBitmapScalingMode(
+                RenderOptions.SetBitmapInterpolationMode(
                     image,
-                    Math.Max(icon.PixelWidth, icon.PixelHeight) <= 128 ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality
+                    Math.Max(icon.PixelSize.Width, icon.PixelSize.Height) <= 128 ? BitmapInterpolationMode.None : BitmapInterpolationMode.HighQuality
                 );
                 row.Children.Add(image);
             }
@@ -212,8 +206,8 @@ namespace ArcademiaGameLauncher.Windows
                 return;
             _title.Text = "Claimed!";
             _qr.Opacity = 0.12;
-            _hint.Visibility = Visibility.Hidden;
-            _countdown.Visibility = Visibility.Hidden;
+            _hint.SetHidden(true);
+            _countdown.SetHidden(true);
             _title.Foreground = new SolidColorBrush(AchievementVisuals.Color(0x2EA043));
             _status.Text = string.IsNullOrEmpty(claimedBy) ? "Saved to your account" : $"Saved to {claimedBy}'s account";
             _status.Foreground = new SolidColorBrush(AchievementVisuals.Color(0x2EA043));
@@ -231,7 +225,7 @@ namespace ArcademiaGameLauncher.Windows
             _countdown.Text = text;
         }
 
-        public void KeepOnTop() => NativeWindows.KeepOnTop(new WindowInteropHelper(this).Handle);
+        public void KeepOnTop() => NativeWindows.KeepOnTop(WindowHelper.HandleOf(this));
 
         public void HideOffer()
         {
@@ -241,22 +235,14 @@ namespace ArcademiaGameLauncher.Windows
             _list.Children.Clear();
         }
 
-        private static BitmapImage RenderQrCode(string content)
+        private static Bitmap RenderQrCode(string content)
         {
             using var generator = new QRCodeGenerator();
             using var data = generator.CreateQrCode(content, QRCodeGenerator.ECCLevel.M);
             var bytes = new PngByteQRCode(data).GetGraphic(20);
 
-            var bitmap = new BitmapImage();
-            using (var stream = new MemoryStream(bytes))
-            {
-                bitmap.BeginInit();
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.StreamSource = stream;
-                bitmap.EndInit();
-            }
-            bitmap.Freeze();
-            return bitmap;
+            using var stream = new MemoryStream(bytes);
+            return new Bitmap(stream);
         }
     }
 }

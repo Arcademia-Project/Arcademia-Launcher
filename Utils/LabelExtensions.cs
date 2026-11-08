@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
 
 namespace ArcademiaGameLauncher.Utils
 {
@@ -88,11 +88,11 @@ namespace ArcademiaGameLauncher.Utils
             if (label == null || string.IsNullOrWhiteSpace(desiredText))
                 return;
 
-            if (label.ActualWidth <= 0 || label.ActualHeight <= 0)
+            if (label.Bounds.Width <= 0 || label.Bounds.Height <= 0)
             {
                 void Handler(object s, SizeChangedEventArgs e)
                 {
-                    if (label.ActualWidth > 0 && label.ActualHeight > 0)
+                    if (label.Bounds.Width > 0 && label.Bounds.Height > 0)
                     {
                         label.SizeChanged -= Handler;
                         label.FitTextToLabel(
@@ -111,8 +111,8 @@ namespace ArcademiaGameLauncher.Utils
 
             var key = new FitKey(
                 desiredText,
-                label.ActualWidth,
-                label.ActualHeight,
+                label.Bounds.Width,
+                label.Bounds.Height,
                 label.FontFamily,
                 label.FontStyle,
                 label.FontWeight,
@@ -135,12 +135,12 @@ namespace ArcademiaGameLauncher.Utils
 
             double availableWidth = Math.Max(
                 0,
-                label.ActualWidth - padding.Left - padding.Right - border.Left - border.Right
+                label.Bounds.Width - padding.Left - padding.Right - border.Left - border.Right
             );
 
             double availableHeight = Math.Max(
                 0,
-                label.ActualHeight - padding.Top - padding.Bottom - border.Top - border.Bottom
+                label.Bounds.Height - padding.Top - padding.Bottom - border.Top - border.Bottom
             );
 
             Typeface typeface = new Typeface(
@@ -150,16 +150,15 @@ namespace ArcademiaGameLauncher.Utils
                 label.FontStretch
             );
 
-            typeface.TryGetGlyphTypeface(out GlyphTypeface glyph);
+            var glyphHeight = TextMetrics.GlyphHeight(typeface);
 
             double GetLineHeight(double fontSize)
             {
-                return glyph != null ? glyph.Height * fontSize : fontSize;
+                return glyphHeight is double height ? height * fontSize : fontSize;
             }
 
             bool TextFits(double fontSize)
             {
-                double dpi = VisualTreeHelper.GetDpi(label).PixelsPerDip;
 
                 var ft = new FormattedText(
                     desiredText,
@@ -167,8 +166,7 @@ namespace ArcademiaGameLauncher.Utils
                     FlowDirection.LeftToRight,
                     typeface,
                     fontSize,
-                    Brushes.Black,
-                    dpi
+                    Brushes.Black
                 )
                 {
                     MaxTextWidth = availableWidth,
@@ -213,8 +211,6 @@ namespace ArcademiaGameLauncher.Utils
 
             _cache[key] = bestSize;
 
-            double dpi = VisualTreeHelper.GetDpi(label).PixelsPerDip;
-
             // If it's at minimum size and text still doesn't fit, add ellipsis
             if (Math.Abs(bestSize - minFontSize) < 0.01)
             {
@@ -224,8 +220,7 @@ namespace ArcademiaGameLauncher.Utils
                     FlowDirection.LeftToRight,
                     typeface,
                     bestSize,
-                    Brushes.Black,
-                    dpi
+                    Brushes.Black
                 )
                 {
                     MaxTextWidth = availableWidth,
@@ -240,8 +235,7 @@ namespace ArcademiaGameLauncher.Utils
                         availableWidth,
                         availableHeight,
                         typeface,
-                        bestSize,
-                        dpi
+                        bestSize
                     );
                 }
             }
@@ -255,8 +249,7 @@ namespace ArcademiaGameLauncher.Utils
             double width,
             double height,
             Typeface typeface,
-            double fontSize,
-            double dpi
+            double fontSize
         )
         {
             if (string.IsNullOrEmpty(text))
@@ -274,8 +267,7 @@ namespace ArcademiaGameLauncher.Utils
                     FlowDirection.LeftToRight,
                     typeface,
                     fontSize,
-                    Brushes.Black,
-                    dpi
+                    Brushes.Black
                 )
                 {
                     MaxTextWidth = width,

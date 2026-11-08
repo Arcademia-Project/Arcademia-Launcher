@@ -1,27 +1,24 @@
 <UserControl x:Class="ArcademiaGameLauncher.UserControls.HomeThumbnailScroll"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid ClipToBounds="True" Background="#050505">
         <Canvas x:Name="GifMasterContainer" Opacity="0" IsHitTestVisible="False"/>
         <Canvas x:Name="ThumbnailCanvas">
             <StackPanel x:Name="RowsContainer"
                         Orientation="Vertical"
-                        RenderTransformOrigin="0.5,0.5">
+                        RenderTransformOrigin="50%,50%">
                 <StackPanel.RenderTransform>
-                    <TransformGroup>
-                        <TranslateTransform x:Name="ScrollTranslate"/>
-                        <RotateTransform Angle="45"/>
-                    </TransformGroup>
+                    <RotateTransform Angle="20"/>
                 </StackPanel.RenderTransform>
             </StackPanel>
         </Canvas>
         <Rectangle IsHitTestVisible="False">
             <Rectangle.Fill>
-                <RadialGradientBrush GradientOrigin="0.5,0.5"
-                                     Center="0.5,0.5"
-                                     RadiusX="0.65"
-                                     RadiusY="0.65">
-                    <GradientStop Color="Transparent" Offset="0.3"/>
+                <RadialGradientBrush GradientOrigin="50%,50%"
+                                     Center="50%,50%"
+                                     RadiusX="65%"
+                                     RadiusY="65%">
+                    <GradientStop Color="#00000000" Offset="0.3"/>
                     <GradientStop Color="#99000000" Offset="1.0"/>
                 </RadialGradientBrush>
             </Rectangle.Fill>

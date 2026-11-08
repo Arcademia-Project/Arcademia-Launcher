@@ -2,14 +2,13 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Text;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Markup;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Xml;
+using ArcademiaGameLauncher.Utils;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Newtonsoft.Json.Linq;
-using XamlAnimatedGif;
 
 namespace ArcademiaGameLauncher.Services
 {
@@ -72,7 +71,7 @@ namespace ArcademiaGameLauncher.Services
                         TextBlock titleText = new()
                         {
                             Text = creditsObject["Value"].ToString(),
-                            Style = (Style)creditsPanel.FindResource("Early GameBoy"),
+                            FontFamily = AchievementVisuals.BundledFont,
                             FontSize = 24,
                             Foreground = new SolidColorBrush(
                                 Color.FromArgb(0xFF, 0xFF, 0xD9, 0x66)
@@ -91,7 +90,7 @@ namespace ArcademiaGameLauncher.Services
                             TextBlock subtitleText = new()
                             {
                                 Text = creditsObject["Subtitle"].ToString(),
-                                Style = (Style)creditsPanel.FindResource("Early GameBoy"),
+                                FontFamily = AchievementVisuals.BundledFont,
                                 FontSize = 16,
                                 Foreground = new SolidColorBrush(
                                     Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)
@@ -186,7 +185,7 @@ namespace ArcademiaGameLauncher.Services
                         TextBlock headingText = new()
                         {
                             Text = creditsObject["Value"].ToString(),
-                            Style = (Style)creditsPanel.FindResource("Early GameBoy"),
+                            FontFamily = AchievementVisuals.BundledFont,
                             FontSize = 16,
                             Foreground = new SolidColorBrush(
                                 Color.FromArgb(0xFF, 0x85, 0x8E, 0xFF)
@@ -226,10 +225,10 @@ namespace ArcademiaGameLauncher.Services
                             TextBlock subheadingText = new()
                             {
                                 Text = subheadingsArray[j]["Value"].ToString(),
-                                Style = (Style)creditsPanel.FindResource("Early GameBoy"),
+                                FontFamily = AchievementVisuals.BundledFont,
                                 FontSize = 18,
                                 Foreground = new SolidColorBrush(
-                                    (Color)ColorConverter.ConvertFromString(colour)
+                                    Color.Parse(colour)
                                 ),
                                 HorizontalAlignment = HorizontalAlignment.Left,
                                 VerticalAlignment = VerticalAlignment.Center,
@@ -270,7 +269,7 @@ namespace ArcademiaGameLauncher.Services
                         TextBlock noteText = new()
                         {
                             Text = creditsObject["Value"].ToString(),
-                            Style = (Style)creditsPanel.FindResource("Early GameBoy"),
+                            FontFamily = AchievementVisuals.BundledFont,
                             FontSize = 11,
                             Foreground = new SolidColorBrush(
                                 Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)
@@ -305,7 +304,7 @@ namespace ArcademiaGameLauncher.Services
                         TextBlock breakText = new()
                         {
                             Text = "----------------------",
-                            Style = (Style)creditsPanel.FindResource("Early GameBoy"),
+                            FontFamily = AchievementVisuals.BundledFont,
                             FontSize = 16,
                             Foreground = new SolidColorBrush(
                                 Color.FromArgb(0xFF, 0x77, 0x77, 0x77)
@@ -351,7 +350,7 @@ namespace ArcademiaGameLauncher.Services
                         // Create a new Image (Static)
                         Image imageStatic = new()
                         {
-                            Source = new BitmapImage(new Uri(imagePath, UriKind.Relative)),
+                            Source = new Bitmap(AssetLoader.Open(AchievementVisuals.Pack(imagePath.TrimStart('/')))),
                         };
 
                         // Set Image Stretch
@@ -381,7 +380,7 @@ namespace ArcademiaGameLauncher.Services
                         if (imagePath.EndsWith(".gif"))
                         {
                             // Copy GifTemplateElement_Parent's child element to make a new Image
-                            Image imageGif = CloneXamlElement((Image)gifTemplateParent.Children[0]);
+                            Image imageGif = new();
                             AnimationBehavior.SetSourceUri(
                                 imageGif,
                                 new(imagePath, UriKind.Relative)
@@ -412,7 +411,7 @@ namespace ArcademiaGameLauncher.Services
                                 (sender, e) =>
                                 {
                                     // Hide the static image
-                                    imageStatic.Visibility = Visibility.Collapsed;
+                                    imageStatic.IsVisible = false;
                                 }
                             );
                         }
@@ -431,16 +430,6 @@ namespace ArcademiaGameLauncher.Services
                     creditsPanel.RowDefinitions.Add(spaceRow);
                 }
             }
-        }
-
-        private static T CloneXamlElement<T>(T element)
-            where T : UIElement
-        {
-            // Clone the XAML element and return it
-            string xaml = XamlWriter.Save(element);
-            StringReader stringReader = new(xaml);
-            XmlReader xmlReader = XmlReader.Create(stringReader);
-            return (T)XamlReader.Load(xmlReader);
         }
     }
 }

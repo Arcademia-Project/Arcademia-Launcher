@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Interop;
-using System.Windows.Media;
-using System.Windows.Shapes;
 using ArcademiaGameLauncher.Services;
 using ArcademiaGameLauncher.Utils;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace ArcademiaGameLauncher.Windows
 {
@@ -31,8 +32,8 @@ namespace ArcademiaGameLauncher.Windows
 
         private sealed class Toast
         {
-            public FrameworkElement Root;
-            public FrameworkElement Glint;
+            public Control Root;
+            public Control Glint;
             public bool TopHalf;
             public int Slot;
             public double FromY;
@@ -47,6 +48,8 @@ namespace ArcademiaGameLauncher.Windows
         private readonly Queue<AchievementToast> _pending = new();
         private readonly List<Toast> _visible = [];
         private readonly Canvas _canvas;
+        private readonly LayoutTransformControl _scaleHost;
+        private readonly DispatcherTimer _frames;
         private readonly Stopwatch _clock = Stopwatch.StartNew();
         private readonly Func<IntPtr> _gameWindow;
         private readonly Action _onToastEntered;
@@ -59,16 +62,18 @@ namespace ArcademiaGameLauncher.Windows
             _gameWindow = gameWindow;
             _onToastEntered = onToastEntered;
 
-            WindowStyle = WindowStyle.None;
-            AllowsTransparency = true;
+            WindowDecorations = WindowDecorations.None;
+            TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
             Background = Brushes.Transparent;
             ShowInTaskbar = false;
             ShowActivated = false;
             Topmost = true;
             Focusable = false;
-            ResizeMode = ResizeMode.NoResize;
+            CanResize = false;
             IsHitTestVisible = false;
             Title = "Arcademia Achievements";
+            _frames = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render, OnRendering);
+            _frames.Stop();
 
             _canvas = new Canvas
             {
@@ -77,13 +82,14 @@ namespace ArcademiaGameLauncher.Windows
                 ClipToBounds = true,
                 IsHitTestVisible = false,
             };
-            Content = _canvas;
+            _scaleHost = new LayoutTransformControl { Child = _canvas };
+            Content = _scaleHost;
         }
 
-        protected override void OnSourceInitialized(EventArgs e)
+        protected override void OnOpened(EventArgs e)
         {
-            base.OnSourceInitialized(e);
-            NativeWindows.MakeOverlay(new WindowInteropHelper(this).Handle, clickThrough: true);
+            base.OnOpened(e);
+            NativeWindows.MakeOverlay(WindowHelper.HandleOf(this), clickThrough: true);
         }
 
         public void Enqueue(AchievementToast toast)
@@ -95,25 +101,25 @@ namespace ArcademiaGameLauncher.Windows
             PositionOnGameMonitor();
             if (!IsVisible)
                 Show();
-            NativeWindows.KeepOnTop(new WindowInteropHelper(this).Handle);
+            NativeWindows.KeepOnTop(WindowHelper.HandleOf(this));
             _rendering = true;
-            CompositionTarget.Rendering += OnRendering;
+            _frames.Start();
         }
 
         private void PositionOnGameMonitor()
         {
-            var handle = new WindowInteropHelper(this).EnsureHandle();
             var bounds = NativeWindows.ToastArea(_gameWindow?.Invoke() ?? IntPtr.Zero);
-            var dpi = VisualTreeHelper.GetDpi(this);
-            var monitorWidth = bounds.Width / dpi.DpiScaleX;
-            var monitorHeight = bounds.Height / dpi.DpiScaleY;
+            var dpi = Screens.Primary?.Scaling ?? 1.0;
+            var monitorHeight = bounds.Height / dpi;
             var scale = Math.Max(0.5, monitorHeight / 1080.0);
 
-            _canvas.LayoutTransform = new ScaleTransform(scale, scale);
+            _scaleHost.LayoutTransform = new ScaleTransform(scale, scale);
             Width = RegionWidth * scale;
             Height = RegionHeight * scale;
-            Left = bounds.X / dpi.DpiScaleX + monitorWidth - Width;
-            Top = bounds.Y / dpi.DpiScaleY + monitorHeight - Height;
+            Position = new PixelPoint(
+                bounds.X + bounds.Width - (int)Math.Round(Width * dpi),
+                bounds.Y + bounds.Height - (int)Math.Round(Height * dpi)
+            );
         }
 
         private static double SlotY(int slot) => Margin + slot * (ToastHeight + Gap);
@@ -181,12 +187,12 @@ namespace ArcademiaGameLauncher.Windows
             if (now - _lastTopmost > 0.5)
             {
                 _lastTopmost = now;
-                NativeWindows.KeepOnTop(new WindowInteropHelper(this).Handle);
+                NativeWindows.KeepOnTop(WindowHelper.HandleOf(this));
             }
 
             if (_visible.Count == 0 && _pending.Count == 0)
             {
-                CompositionTarget.Rendering -= OnRendering;
+                _frames.Stop();
                 _rendering = false;
                 Hide();
             }
@@ -202,7 +208,7 @@ namespace ArcademiaGameLauncher.Windows
                 return;
             if (t > 1)
             {
-                toast.Glint.Visibility = Visibility.Collapsed;
+                toast.Glint.IsVisible = false;
                 toast.Glint = null;
                 return;
             }
@@ -259,11 +265,16 @@ namespace ArcademiaGameLauncher.Windows
                     {
                         BorderThickness = new Thickness(1),
                         BorderBrush = new SolidColorBrush(AchievementVisuals.Color(0x9333EA, 0.7)),
-                        Background = new LinearGradientBrush(
-                            AchievementVisuals.Color(0x3B2650),
-                            AchievementVisuals.Color(0x24182E),
-                            90
-                        ),
+                        Background = new LinearGradientBrush
+                        {
+                            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                            GradientStops =
+                            {
+                                new GradientStop(AchievementVisuals.Color(0x3B2650), 0),
+                                new GradientStop(AchievementVisuals.Color(0x24182E), 1),
+                            },
+                        },
                     }
                     : new Border { Background = new SolidColorBrush(AchievementVisuals.Color(0x24232A)) }
             );
@@ -274,7 +285,7 @@ namespace ArcademiaGameLauncher.Windows
             var logo = AchievementVisuals.LogoHalf(topHalf);
             if (logo is not null)
             {
-                var logoWidth = LogoHeight * logo.PixelWidth / logo.PixelHeight;
+                var logoWidth = LogoHeight * logo.PixelSize.Width / logo.PixelSize.Height;
                 var image = new Image
                 {
                     Source = logo,
@@ -288,23 +299,25 @@ namespace ArcademiaGameLauncher.Windows
                 clip.Children.Add(image);
             }
 
-            FrameworkElement glint = null;
+            Control glint = null;
             if (fresh)
             {
                 var sweep = new Rectangle
                 {
                     Width = GlintWidth,
                     Height = ToastHeight * 2.2,
-                    Fill = new LinearGradientBrush(
-                        new GradientStopCollection
+                    Fill = new LinearGradientBrush
+                    {
+                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                        EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+                        GradientStops =
                         {
-                            new(AchievementVisuals.Color(0xFFFFFF, 0), 0),
-                            new(AchievementVisuals.Color(0xFFFFFF, 0.22), 0.5),
-                            new(AchievementVisuals.Color(0xFFFFFF, 0), 1),
+                            new GradientStop(AchievementVisuals.Color(0xFFFFFF, 0), 0),
+                            new GradientStop(AchievementVisuals.Color(0xFFFFFF, 0.22), 0.5),
+                            new GradientStop(AchievementVisuals.Color(0xFFFFFF, 0), 1),
                         },
-                        0
-                    ),
-                    RenderTransformOrigin = new Point(0.5, 0.5),
+                    },
+                    RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
                     RenderTransform = new RotateTransform(22),
                 };
                 Canvas.SetLeft(sweep, -GlintWidth * 2);
@@ -326,11 +339,11 @@ namespace ArcademiaGameLauncher.Windows
                     Height = 68,
                     Stretch = Stretch.UniformToFill,
                 };
-                RenderOptions.SetBitmapScalingMode(
+                RenderOptions.SetBitmapInterpolationMode(
                     iconImage,
-                    Math.Max(icon.PixelWidth, icon.PixelHeight) <= 128
-                        ? BitmapScalingMode.NearestNeighbor
-                        : BitmapScalingMode.HighQuality
+                    Math.Max(icon.PixelSize.Width, icon.PixelSize.Height) <= 128
+                        ? BitmapInterpolationMode.None
+                        : BitmapInterpolationMode.HighQuality
                 );
                 Canvas.SetLeft(iconImage, 14);
                 Canvas.SetTop(iconImage, (ToastHeight - 68) / 2);
@@ -343,9 +356,9 @@ namespace ArcademiaGameLauncher.Windows
                 ? (string.IsNullOrEmpty(data.Description) ? "Claim it after the game" : data.Description)
                 : (data.AllowPersonal ? "Claim it for yourself after the game" : "Your team already has this one");
 
-            content.Children.Add(Text(title, 14, FontWeights.Bold, fresh ? AchievementVisuals.Color(0xC9A0FF) : AchievementVisuals.Color(0xA5ADB8), 13));
-            content.Children.Add(Text(data.Name, 20, FontWeights.Bold, fresh ? Colors.White : AchievementVisuals.Color(0xDBDBE0), 31));
-            content.Children.Add(Text(sub, 14, FontWeights.Normal, AchievementVisuals.Color(0xA5ADB8), 60));
+            content.Children.Add(Text(title, 14, FontWeight.Bold, fresh ? AchievementVisuals.Color(0xC9A0FF) : AchievementVisuals.Color(0xA5ADB8), 13));
+            content.Children.Add(Text(data.Name, 20, FontWeight.Bold, fresh ? Colors.White : AchievementVisuals.Color(0xDBDBE0), 31));
+            content.Children.Add(Text(sub, 14, FontWeight.Normal, AchievementVisuals.Color(0xA5ADB8), 60));
 
             return new Toast { Root = root, Glint = glint };
         }
