@@ -205,6 +205,9 @@ namespace ArcademiaGameLauncher.Services
 
         private static void EnsureExecutable(string path)
         {
+            if (OperatingSystem.IsWindows())
+                return;
+
             try
             {
                 if (File.Exists(path) && (File.GetUnixFileMode(path) & UnixFileMode.UserExecute) == 0)

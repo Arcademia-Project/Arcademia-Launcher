@@ -83,6 +83,21 @@ jobs:
           - \`linux-x64\`: Linux cabinets"
           fi
 
+      - name: Link the draft release
+        if: steps.check.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version="${{ steps.read.outputs.version }}"
+          url=$(gh release view "v$version" --json url --jq .url)
+          {
+            echo "### Draft release v$version"
+            echo ""
+            echo "The Windows and Linux zips are attached to **[v$version]($url)** once both build jobs finish."
+            echo "Drafts are only visible to people with write access to this repository."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build:
     needs: version
     if: needs.version.outputs.release == 'true'
