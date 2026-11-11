@@ -1,9 +1,10 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Windows;
-using System.Windows.Interop;
-using System.Windows.Media.Imaging;
+using ArcademiaGameLauncher.Platform;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media.Imaging;
 using ArcademiaGameLauncher.Utils;
 using QRCoder;
 
@@ -38,10 +39,10 @@ namespace ArcademiaGameLauncher.Windows
             ShowActivated = false;
         }
 
-        protected override void OnSourceInitialized(EventArgs e)
+        protected override void OnOpened(EventArgs e)
         {
-            base.OnSourceInitialized(e);
-            _windowHandle = new WindowInteropHelper(this).Handle;
+            base.OnOpened(e);
+            _windowHandle = WindowHelper.HandleOf(this);
         }
 
         public void ShowWindow(string claimUrl)
@@ -73,7 +74,9 @@ namespace ArcademiaGameLauncher.Windows
                 {
                     _isOpen = false;
 
-                    if (_windowHandle != IntPtr.Zero)
+                    if (_windowHandle != IntPtr.Zero && !OperatingSystem.IsWindows())
+                        X11.Lower(_windowHandle);
+                    else if (_windowHandle != IntPtr.Zero)
                         SetWindowPos(
                             _windowHandle,
                             HWND_BOTTOM,
@@ -88,7 +91,7 @@ namespace ArcademiaGameLauncher.Windows
                     Hide();
                     QrImage.Source = null;
                 },
-                System.Windows.Threading.DispatcherPriority.Send
+                Avalonia.Threading.DispatcherPriority.Send
             );
         }
 
@@ -115,23 +118,15 @@ namespace ArcademiaGameLauncher.Windows
             });
         }
 
-        private static BitmapImage RenderQrCode(string content)
+        private static Bitmap RenderQrCode(string content)
         {
             using var generator = new QRCodeGenerator();
             using var data = generator.CreateQrCode(content, QRCodeGenerator.ECCLevel.M);
             var pngQr = new PngByteQRCode(data);
             var bytes = pngQr.GetGraphic(20);
 
-            var bitmap = new BitmapImage();
-            using (var stream = new MemoryStream(bytes))
-            {
-                bitmap.BeginInit();
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.StreamSource = stream;
-                bitmap.EndInit();
-            }
-            bitmap.Freeze();
-            return bitmap;
+            using var stream = new MemoryStream(bytes);
+            return new Bitmap(stream);
         }
     }
 }

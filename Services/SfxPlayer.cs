@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using ArcademiaGameLauncher.Platform;
 using Microsoft.Extensions.Logging;
 using NAudio.Vorbis;
 using NAudio.Wave;
@@ -71,16 +72,8 @@ namespace ArcademiaGameLauncher.Services
                     _log.LogDebug("[Audio] Content-Type: {ContentType}", contentType);
 
                 using var reader = CreateReaderFor(requestUri.ToString(), contentType, ms);
-                using var output = new WaveOutEvent();
-
-                output.Init(reader);
-                output.Play();
-
-                while (output.PlaybackState == PlaybackState.Playing && !ct.IsCancellationRequested)
-                    await Task.Delay(100, ct).ConfigureAwait(false);
-
-                if (ct.IsCancellationRequested && output.PlaybackState == PlaybackState.Playing)
-                    output.Stop();
+                await AudioOutput.PlayAsync(reader.ToSampleProvider(), ct).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException)
             {
@@ -113,11 +106,10 @@ namespace ArcademiaGameLauncher.Services
                     await resource.CopyToAsync(ms);
                     ms.Position = 0;
                     using var reader = CreateReaderFor(resourceName, null, ms);
-                    using var output = new WaveOutEvent();
-                    output.Init(new VolumeSampleProvider(reader.ToSampleProvider()) { Volume = Math.Clamp(volume, 0f, 1f) });
-                    output.Play();
-                    while (output.PlaybackState == PlaybackState.Playing)
-                        await Task.Delay(100);
+                    await AudioOutput.PlayAsync(
+                        new VolumeSampleProvider(reader.ToSampleProvider()) { Volume = Math.Clamp(volume, 0f, 1f) },
+                        CancellationToken.None
+                    );
                 }
                 catch (Exception ex)
                 {
@@ -170,7 +162,7 @@ namespace ArcademiaGameLauncher.Services
                 url.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)
                 || contentType == "audio/mpeg"
             )
-                return new Mp3FileReader(stream);
+                return AudioOutput.CreateMp3Reader(stream);
 
             if (
                 url.EndsWith(".aiff", StringComparison.OrdinalIgnoreCase)

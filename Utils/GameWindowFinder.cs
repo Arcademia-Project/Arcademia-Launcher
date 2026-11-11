@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -84,8 +85,18 @@ namespace ArcademiaGameLauncher.Utils
         [DllImport("kernel32.dll")]
         private static extern bool CloseHandle(IntPtr handle);
 
+        public static string ExpectedExecutable { get; set; }
+
         public static IntPtr Find(int rootProcessId)
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                var window = Platform.X11.FindLargestWindow(LinuxProcessTree(rootProcessId));
+                if (window == IntPtr.Zero && !string.IsNullOrEmpty(ExpectedExecutable))
+                    window = Platform.X11.FindLargestWindowByClass(ExpectedExecutable);
+                return window;
+            }
+
             var processIds = ProcessTree(rootProcessId);
             var best = IntPtr.Zero;
             long bestArea = 0;
@@ -147,6 +158,46 @@ namespace ArcademiaGameLauncher.Utils
 
         private static bool StartedAfter(uint processId, DateTime? rootStarted) =>
             rootStarted is not DateTime root || StartTime((int)processId) is not DateTime started || started >= root;
+
+        internal static HashSet<int> LinuxProcessTree(int rootProcessId)
+        {
+            var tree = new HashSet<int> { rootProcessId };
+            var parents = new List<(int Id, int Parent)>();
+
+            try
+            {
+                foreach (var directory in Directory.EnumerateDirectories("/proc"))
+                {
+                    if (!int.TryParse(Path.GetFileName(directory), out var id))
+                        continue;
+
+                    try
+                    {
+                        var stat = File.ReadAllText(Path.Combine(directory, "stat"));
+                        var fields = stat[(stat.LastIndexOf(')') + 2)..].Split(' ');
+                        if (fields.Length > 1 && int.TryParse(fields[1], out var parent))
+                            parents.Add((id, parent));
+                    }
+                    catch { }
+                }
+            }
+            catch
+            {
+                return tree;
+            }
+
+            var rootStarted = StartTime(rootProcessId);
+            bool added;
+            do
+            {
+                added = false;
+                foreach (var (id, parent) in parents)
+                    if (tree.Contains(parent) && !tree.Contains(id) && StartedAfter((uint)id, rootStarted) && tree.Add(id))
+                        added = true;
+            } while (added);
+
+            return tree;
+        }
 
         private static HashSet<uint> ProcessTree(int rootProcessId)
         {

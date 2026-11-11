@@ -1,6 +1,6 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
-using System.Windows;
+using ArcademiaGameLauncher.Platform;
 
 namespace ArcademiaGameLauncher.Utils
 {
@@ -59,6 +59,9 @@ namespace ArcademiaGameLauncher.Utils
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
 
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int index);
+
         [StructLayout(LayoutKind.Sequential)]
         private struct NativePoint
         {
@@ -70,6 +73,11 @@ namespace ArcademiaGameLauncher.Utils
         {
             if (handle == IntPtr.Zero)
                 return;
+            if (!OperatingSystem.IsWindows())
+            {
+                X11.MakeOverlay(handle);
+                return;
+            }
             var style = GetWindowLongPtr(handle, GWL_EXSTYLE).ToInt64();
             style |= WS_EX_TOOLWINDOW | WS_EX_LAYERED;
             if (!activatable)
@@ -82,6 +90,13 @@ namespace ArcademiaGameLauncher.Utils
         public static bool TryGetBounds(IntPtr handle, out Int32Rect bounds)
         {
             bounds = default;
+            if (!OperatingSystem.IsWindows())
+            {
+                if (handle == IntPtr.Zero || !X11.TryGetBounds(handle, out var x, out var y, out var width, out var height))
+                    return false;
+                bounds = new Int32Rect(x, y, width, height);
+                return true;
+            }
             if (handle == IntPtr.Zero || !GetWindowRect(handle, out var rect))
                 return false;
 
@@ -93,6 +108,11 @@ namespace ArcademiaGameLauncher.Utils
         {
             if (handle == IntPtr.Zero)
                 return;
+            if (!OperatingSystem.IsWindows())
+            {
+                X11.SetBounds(handle, bounds.X, bounds.Y, bounds.Width, bounds.Height);
+                return;
+            }
             SetWindowPos(
                 handle,
                 IntPtr.Zero,
@@ -108,23 +128,29 @@ namespace ArcademiaGameLauncher.Utils
         {
             if (handle == IntPtr.Zero)
                 return;
+            if (!OperatingSystem.IsWindows())
+            {
+                X11.KeepOnTop(handle);
+                return;
+            }
             SetWindowPos(handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
         }
 
         public static Int32Rect MonitorBounds(IntPtr window)
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                var (screenWidth, screenHeight) = X11.ScreenSize();
+                return new Int32Rect(0, 0, screenWidth, screenHeight);
+            }
+
             var monitor = window != IntPtr.Zero
                 ? MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY)
                 : MonitorFromPoint(new NativePoint(), MONITOR_DEFAULTTOPRIMARY);
 
             var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
             if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info))
-                return new Int32Rect(
-                    0,
-                    0,
-                    (int)SystemParameters.PrimaryScreenWidth,
-                    (int)SystemParameters.PrimaryScreenHeight
-                );
+                return new Int32Rect(0, 0, GetSystemMetrics(0), GetSystemMetrics(1));
 
             return new Int32Rect(
                 info.Monitor.Left,
@@ -136,6 +162,20 @@ namespace ArcademiaGameLauncher.Utils
 
         public static Int32Rect ToastArea(IntPtr window)
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                var monitorBounds = MonitorBounds(window);
+                var coversScreen =
+                    TryGetBounds(window, out var gameBounds)
+                    && gameBounds.X <= monitorBounds.X
+                    && gameBounds.Y <= monitorBounds.Y
+                    && gameBounds.X + gameBounds.Width >= monitorBounds.X + monitorBounds.Width
+                    && gameBounds.Y + gameBounds.Height >= monitorBounds.Y + monitorBounds.Height;
+                if (coversScreen || X11.WorkArea() is not { } work)
+                    return monitorBounds;
+                return new Int32Rect(work.X, work.Y, work.Width, work.Height);
+            }
+
             var monitor = window != IntPtr.Zero
                 ? MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY)
                 : MonitorFromPoint(new NativePoint(), MONITOR_DEFAULTTOPRIMARY);

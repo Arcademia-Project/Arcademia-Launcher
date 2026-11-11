@@ -3,9 +3,13 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using System.Windows;
 using ArcademiaGameLauncher.Services;
 using ArcademiaGameLauncher.Utils;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+using Avalonia.Media;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -19,9 +23,23 @@ namespace ArcademiaGameLauncher
     {
         private IHost _host = null!;
 
-        protected override void OnStartup(StartupEventArgs e)
+        public override void Initialize() => AvaloniaXamlLoader.Load(this);
+
+        public static void Shutdown()
         {
-            base.OnStartup(e);
+            if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                desktop.Shutdown();
+        }
+
+        public override void OnFrameworkInitializationCompleted()
+        {
+            base.OnFrameworkInitializationCompleted();
+
+            if (ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop)
+                return;
+
+            desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+            desktop.Exit += (_, _) => OnExit();
 
             UseInstallRootAsWorkingDirectory();
 
@@ -53,6 +71,16 @@ namespace ArcademiaGameLauncher
                 )
                 .CreateLogger();
 
+            if (!File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "Config.json")))
+            {
+                const string message =
+                    "Config.json file not found. Please ensure it exists in the application directory.";
+                Log.Fatal("[System] {Message}", message);
+                desktop.MainWindow = ConfigurationErrorWindow(message);
+                desktop.MainWindow.Show();
+                return;
+            }
+
             _host = Host.CreateDefaultBuilder()
                 .UseSerilog()
                 .ConfigureServices(services =>
@@ -77,16 +105,10 @@ namespace ArcademiaGameLauncher
                         "Config.json"
                     );
                     if (!File.Exists(configPath))
-                    {
-                        MessageBox.Show(
+                        throw new FileNotFoundException(
                             "Config.json file not found. Please ensure it exists in the application directory.",
-                            "Configuration Error",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Error
+                            configPath
                         );
-                        Application.Current?.Shutdown();
-                        return;
-                    }
 
                     JObject config = JObject.Parse(File.ReadAllText(configPath));
                     services.AddSingleton(config);
@@ -111,6 +133,10 @@ namespace ArcademiaGameLauncher
                                     "ArcadeMachine",
                                     creds
                                 );
+                            client.DefaultRequestHeaders.Add(
+                                "X-Arcademia-Platform",
+                                OperatingSystem.IsWindows() ? "Windows" : "Linux"
+                            );
                         })
                         .ConfigurePrimaryHttpMessageHandler(() =>
                         {
@@ -136,6 +162,7 @@ namespace ArcademiaGameLauncher
                     services.AddSingleton<ISessionClaimCoordinator, SessionClaimCoordinator>();
                     services.AddSingleton<ISdkBrokerService, SdkBrokerService>();
                     services.AddSingleton<IGameLogService, GameLogService>();
+                    services.AddSingleton<IGameRunner, GameRunner>();
 
                     services.AddSingleton<Windows.MainWindow>();
                 })
@@ -143,13 +170,34 @@ namespace ArcademiaGameLauncher
 
             _host.Start();
 
+            if (!OperatingSystem.IsWindows())
+                _ = Task.Run(_host.Services.GetRequiredService<IGameRunner>().PrepareAsync);
+
             var sessionTracking = _host.Services.GetRequiredService<ISessionTrackingService>();
             Task.Run(sessionTracking.RecoverCrashAsync).GetAwaiter().GetResult();
 
             var mainWindow = _host.Services.GetRequiredService<Windows.MainWindow>();
-            MainWindow = mainWindow;
+            desktop.MainWindow = mainWindow;
             mainWindow.Show();
         }
+
+        private static Window ConfigurationErrorWindow(string message) =>
+            new()
+            {
+                Title = "Configuration Error",
+                Width = 640,
+                Height = 200,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                Background = Brushes.Black,
+                Content = new TextBlock
+                {
+                    Text = message,
+                    Foreground = Brushes.White,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(24),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                },
+            };
 
         private static void UseInstallRootAsWorkingDirectory()
         {
@@ -164,11 +212,10 @@ namespace ArcademiaGameLauncher
                 Directory.SetCurrentDirectory(installRoot.FullName);
         }
 
-        protected override void OnExit(ExitEventArgs e)
+        private void OnExit()
         {
             _host?.Dispose();
             Log.CloseAndFlush();
-            base.OnExit(e);
         }
     }
 }

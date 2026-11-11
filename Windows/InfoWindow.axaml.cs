@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Runtime.InteropServices;
-using System.Windows;
-using System.Windows.Interop;
+using ArcademiaGameLauncher.Platform;
+using Avalonia;
+using Avalonia.Controls;
 using ArcademiaGameLauncher.Utils;
 
 namespace ArcademiaGameLauncher.Windows
@@ -45,10 +46,10 @@ namespace ArcademiaGameLauncher.Windows
             ShowActivated = false;
         }
 
-        protected override void OnSourceInitialized(EventArgs e)
+        protected override void OnOpened(EventArgs e)
         {
-            base.OnSourceInitialized(e);
-            _windowHandle = new WindowInteropHelper(this).Handle;
+            base.OnOpened(e);
+            _windowHandle = WindowHelper.HandleOf(this);
         }
 
         public void ShowWindow(InfoWindowType type)
@@ -57,16 +58,16 @@ namespace ArcademiaGameLauncher.Windows
             {
                 _isOpen = true;
 
-                ForceExitMenu.Visibility = Visibility.Collapsed;
-                IdleMenu.Visibility = Visibility.Collapsed;
+                ForceExitMenu.IsVisible = false;
+                IdleMenu.IsVisible = false;
 
                 switch (type)
                 {
                     case InfoWindowType.ForceExit:
-                        ForceExitMenu.Visibility = Visibility.Visible;
+                        ForceExitMenu.IsVisible = true;
                         break;
                     case InfoWindowType.Idle:
-                        IdleMenu.Visibility = Visibility.Visible;
+                        IdleMenu.IsVisible = true;
                         break;
                 }
 
@@ -90,7 +91,9 @@ namespace ArcademiaGameLauncher.Windows
                 {
                     _isOpen = false;
 
-                    if (_windowHandle != IntPtr.Zero)
+                    if (_windowHandle != IntPtr.Zero && !OperatingSystem.IsWindows())
+                        X11.Lower(_windowHandle);
+                    else if (_windowHandle != IntPtr.Zero)
                         SetWindowPos(
                             _windowHandle,
                             HWND_BOTTOM,
@@ -104,7 +107,7 @@ namespace ArcademiaGameLauncher.Windows
                     Topmost = false;
                     Hide();
                 },
-                System.Windows.Threading.DispatcherPriority.Send
+                Avalonia.Threading.DispatcherPriority.Send
             );
         }
 
@@ -138,9 +141,9 @@ namespace ArcademiaGameLauncher.Windows
 
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
-                if (ForceExitMenu.Visibility == Visibility.Visible)
+                if (ForceExitMenu.IsVisible)
                     ForceExitCountdown.Text = timeString;
-                if (IdleMenu.Visibility == Visibility.Visible)
+                if (IdleMenu.IsVisible)
                     IdleCountdown.Text = timeString;
             });
         }

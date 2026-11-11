@@ -1,43 +1,20 @@
-﻿<Window x:Class="ArcademiaGameLauncher.Windows.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window x:Class="ArcademiaGameLauncher.Windows.MainWindow"
+        xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:System="clr-namespace:System;assembly=mscorlib"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:utils="clr-namespace:ArcademiaGameLauncher.Utils"
         xmlns:local="clr-namespace:ArcademiaGameLauncher"
-        xmlns:gif="https://github.com/XamlAnimatedGif/XamlAnimatedGif"
+        xmlns:gif="clr-namespace:ArcademiaGameLauncher.Utils"
         xmlns:uc="clr-namespace:ArcademiaGameLauncher.UserControls"
-        mc:Ignorable="d"
         WindowStartupLocation="CenterScreen"
-        WindowState="Maximized"
-        WindowStyle="None"
+        WindowState="FullScreen"
+        WindowDecorations="None"
         Background="Black"
-        Title="Launcher"
-        Width="{DynamicResource {x:Static SystemParameters.PrimaryScreenWidthKey}}"
-        Height="{DynamicResource {x:Static SystemParameters.PrimaryScreenHeightKey}}">
+        Title="Launcher">
     <!-- Declare the Launcher Version, Global Font and ToggleButton style -->
     <Window.Resources>
-        <System:String x:Key="LauncherVersion">[v2.10.2-26 Release Build]</System:String>
-        <System:String x:Key="YearStyle">yyyy</System:String>
-        <System:Double x:Key="LogicalSizeWidth">1920</System:Double>
-        <System:Double x:Key="LogicalSizeHeight">1080</System:Double>
-        <Style x:Key="Early GameBoy">
-            <Setter Property="TextElement.FontFamily"
-                    Value="/Fonts/#Press Start 2P"/>
-        </Style>
-        <Style x:Key="FocusVisual">
-            <Setter Property="Control.Template">
-                <Setter.Value>
-                    <ControlTemplate>
-                        <Rectangle Margin="2"
-                                   SnapsToDevicePixels="true"
-                                   Stroke="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
-                                   StrokeThickness="1"
-                                   StrokeDashArray="1 2"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <x:Double x:Key="LogicalSizeWidth">1920</x:Double>
+        <x:Double x:Key="LogicalSizeHeight">1080</x:Double>
+        <FontFamily x:Key="EarlyGameBoy">avares://Arcademia-Launcher/Fonts#Press Start 2P</FontFamily>
         <SolidColorBrush x:Key="ToggleButton.Static.Background"
                          Color="#FFDDDDDD"/>
         <SolidColorBrush x:Key="ToggleButton.Static.Border"
@@ -56,18 +33,16 @@
                          Color="#FFF"/>
         <SolidColorBrush x:Key="ToggleButton.Disabled.Foreground"
                          Color="#FFF"/>
-        <Style x:Key="ToggleButtonStyle"
-               TargetType="{x:Type ToggleButton}">
+        <ControlTheme x:Key="ToggleButtonStyle"
+                      TargetType="ToggleButton">
             <Setter Property="FontFamily"
-                    Value="/Fonts/#Early GameBoy"/>
-            <Setter Property="FocusVisualStyle"
-                    Value="{StaticResource FocusVisual}"/>
+                    Value="avares://Arcademia-Launcher/Fonts#Early GameBoy"/>
             <Setter Property="Background"
                     Value="{StaticResource ToggleButton.Static.Background}"/>
             <Setter Property="BorderBrush"
                     Value="{StaticResource ToggleButton.Static.Border}"/>
             <Setter Property="Foreground"
-                    Value="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"/>
+                    Value="Black"/>
             <Setter Property="BorderThickness"
                     Value="1"/>
             <Setter Property="HorizontalContentAlignment"
@@ -77,124 +52,74 @@
             <Setter Property="Padding"
                     Value="1"/>
             <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type ToggleButton}">
-                        <Border x:Name="border"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                Background="{TemplateBinding Background}"
-                                SnapsToDevicePixels="true"
-                                ClipToBounds="True">
-                            <Grid>
-                                <Rectangle x:Name="PART_Fill"
-                                           Fill="Transparent"
-                                           RenderTransformOrigin="0,0.5">
-                                    <Rectangle.RenderTransform>
-                                        <ScaleTransform ScaleX="0"/>
-                                    </Rectangle.RenderTransform>
-                                </Rectangle>
-                                <ContentPresenter x:Name="contentPresenter"
-                                                  Focusable="False"
-                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                  Margin="{TemplateBinding Padding}"
-                                                  RecognizesAccessKey="True"
-                                                  SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"
-                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
-                            </Grid>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsPressed"
-                                     Value="true">
-                                <Setter Property="Background"
-                                        TargetName="border"
-                                        Value="{StaticResource ToggleButton.Pressed.Background}"/>
-                                <Setter Property="BorderBrush"
-                                        TargetName="border"
-                                        Value="{StaticResource ToggleButton.Pressed.Border}"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled"
-                                     Value="false">
-                                <Setter Property="Background"
-                                        TargetName="border"
-                                        Value="{StaticResource ToggleButton.Disabled.Background}"/>
-                                <Setter Property="BorderBrush"
-                                        TargetName="border"
-                                        Value="{StaticResource ToggleButton.Disabled.Border}"/>
-                                <Setter Property="TextElement.Foreground"
-                                        TargetName="contentPresenter"
-                                        Value="{StaticResource ToggleButton.Disabled.Foreground}"/>
-                            </Trigger>
-                            <Trigger Property="IsMouseOver"
-                                     Value="true">
-                                <Setter Property="Background"
-                                        TargetName="border"
-                                        Value="{StaticResource ToggleButton.MouseOver.Background}"/>
-                                <Setter Property="BorderBrush"
-                                        TargetName="border"
-                                        Value="{StaticResource ToggleButton.MouseOver.Border}"/>
-                            </Trigger>
-                            <Trigger Property="IsChecked"
-                                     Value="true">
-                                <Setter Property="Background"
-                                        TargetName="border"
-                                        Value="{StaticResource ToggleButton.MouseOver.Background}"/>
-                                <Setter Property="BorderBrush"
-                                        TargetName="border"
-                                        Value="{StaticResource ToggleButton.MouseOver.Border}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
+                <ControlTemplate>
+                    <Border x:Name="border"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Background="{TemplateBinding Background}"
+                            ClipToBounds="True">
+                        <Grid>
+                            <Rectangle x:Name="PART_Fill"
+                                       Fill="Transparent"
+                                       RenderTransformOrigin="0%,50%">
+                                <Rectangle.RenderTransform>
+                                    <ScaleTransform ScaleX="0"/>
+                                </Rectangle.RenderTransform>
+                            </Rectangle>
+                            <ContentPresenter x:Name="contentPresenter"
+                                              Focusable="False"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              Foreground="{TemplateBinding Foreground}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
             </Setter>
-        </Style>
-
-        <!-- Reusable tile style: Image background + translucent text bar -->
-        <Style x:Key="GameTileStyle"
-                TargetType="Grid">
-            <Setter Property="Margin"
-                    Value="5"/>
-            <Setter Property="Width"
-                    Value="280"/>
-            <Setter Property="Height"
-                    Value="120"/>
-            <Setter Property="ClipToBounds"
-                    Value="True"/>
-        </Style>
-
-        <!-- Consistent title styling -->
-        <Style x:Key="GameTileTitleStyle"
-                TargetType="TextBlock">
-            <Setter Property="Foreground"
-                    Value="White"/>
-            <Setter Property="FontSize"
-                    Value="24"/>
-            <Setter Property="Style"
-                    Value="{StaticResource Early GameBoy}"/>
-            <Setter Property="TextWrapping"
-                    Value="Wrap"/>
-            <Setter Property="TextAlignment"
-                    Value="Center"/>
-            <Setter Property="VerticalAlignment"
-                    Value="Center"/>
-            <Setter Property="HorizontalAlignment"
-                    Value="Center"/>
-        </Style>
+            <Style Selector="^:pressed /template/ Border#border">
+                <Setter Property="Background"
+                        Value="{StaticResource ToggleButton.Pressed.Background}"/>
+                <Setter Property="BorderBrush"
+                        Value="{StaticResource ToggleButton.Pressed.Border}"/>
+            </Style>
+            <Style Selector="^:disabled /template/ Border#border">
+                <Setter Property="Background"
+                        Value="{StaticResource ToggleButton.Disabled.Background}"/>
+                <Setter Property="BorderBrush"
+                        Value="{StaticResource ToggleButton.Disabled.Border}"/>
+            </Style>
+            <Style Selector="^:disabled /template/ ContentPresenter#contentPresenter">
+                <Setter Property="Foreground"
+                        Value="{StaticResource ToggleButton.Disabled.Foreground}"/>
+            </Style>
+            <Style Selector="^:pointerover /template/ Border#border">
+                <Setter Property="Background"
+                        Value="{StaticResource ToggleButton.MouseOver.Background}"/>
+                <Setter Property="BorderBrush"
+                        Value="{StaticResource ToggleButton.MouseOver.Border}"/>
+            </Style>
+            <Style Selector="^:checked /template/ Border#border">
+                <Setter Property="Background"
+                        Value="{StaticResource ToggleButton.MouseOver.Background}"/>
+                <Setter Property="BorderBrush"
+                        Value="{StaticResource ToggleButton.MouseOver.Border}"/>
+            </Style>
+        </ControlTheme>
     </Window.Resources>
-    <Viewbox Stretch="Uniform"
-             Width="{DynamicResource {x:Static SystemParameters.PrimaryScreenWidthKey}}"
-             Height="{DynamicResource {x:Static SystemParameters.PrimaryScreenHeightKey}}">
+    <Viewbox Stretch="Uniform">
         <StackPanel Background="Black">
             <!-- Template Element For Programatically creating Gifs programatically -->
             <Grid Width="0"
                   Height="0"
                   x:Name="GifTemplateElement_Parent">
-                <Image gif:AnimationBehavior.CacheFramesInMemory="True"
+                <Image
                        gif:AnimationBehavior.SourceUri=""/>
             </Grid>
 
             <!-- Maintenance Screen -->
-            <Grid x:Name="MaintenanceScreen"
-                  Visibility="Collapsed"
+            <Grid x:Name="MaintenanceScreen" IsVisible="False"
                   Width="{StaticResource LogicalSizeWidth}"
                   Height="{StaticResource LogicalSizeHeight}">
                 <Grid.RowDefinitions>
@@ -207,21 +132,20 @@
                            Text="Undergoing Maintenance"
                            Foreground="White"
                            FontSize="40"
-                           Style="{StaticResource Early GameBoy}"
+                           FontFamily="{StaticResource EarlyGameBoy}"
                            VerticalAlignment="Center"
                            HorizontalAlignment="Center"/>
                 <TextBlock Grid.Row="2"
                            Text="Please Wait"
                            Foreground="White"
                            FontSize="40"
-                           Style="{StaticResource Early GameBoy}"
+                           FontFamily="{StaticResource EarlyGameBoy}"
                            VerticalAlignment="Center"
                            HorizontalAlignment="Center"/>
             </Grid>
 
             <!-- Start Menu -->
-            <Grid x:Name="StartMenu"
-                  Visibility="Collapsed"
+            <Grid x:Name="StartMenu" IsVisible="False"
                   Width="{StaticResource LogicalSizeWidth}"
                   Height="{StaticResource LogicalSizeHeight}">
                 <Grid.Background>
@@ -231,7 +155,6 @@
                     <Image x:Name="StartMenu_Image"
                            Width="{StaticResource LogicalSizeWidth}"
                            Height="{StaticResource LogicalSizeHeight}"
-                           gif:AnimationBehavior.CacheFramesInMemory="True"
                            gif:AnimationBehavior.SourceUri="/Assets/Images/StartMenu_Background.gif"
                            Stretch="UniformToFill"/>
 
@@ -240,7 +163,7 @@
                                Width="800"
                                Height="{StaticResource LogicalSizeWidth}"
                                HorizontalAlignment="Left"
-                               VerticalAlignment="Top">
+                               VerticalAlignment="Top" RenderTransformOrigin="0%,0%">
                         <Rectangle.RenderTransform>
                             <TransformGroup>
                                 <ScaleTransform/>
@@ -259,7 +182,7 @@
 
                     <TextBlock x:Name="PressStartText"
                                Text="PRESS START"
-                               Style="{StaticResource Early GameBoy}"
+                               FontFamily="{StaticResource EarlyGameBoy}"
                                FontSize="42"
                                Foreground="White"
                                Height="44"
@@ -268,8 +191,7 @@
             </Grid>
 
             <!-- Home Menu -->
-            <Grid x:Name="HomeMenu"
-                  Visibility="Collapsed"
+            <Grid x:Name="HomeMenu" IsVisible="False"
                   Width="{StaticResource LogicalSizeWidth}"
                   Height="{StaticResource LogicalSizeHeight}">
                 <Grid.Background>
@@ -305,7 +227,7 @@
                               Margin="100,0">
                             <TextBlock x:Name="GameLibraryText"
                                        Text="Games Library"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        FontSize="18"
                                        Foreground="White"
                                        VerticalAlignment="Center"
@@ -315,7 +237,7 @@
                               Margin="100,0">
                             <TextBlock x:Name="InputMenuText"
                                        Text="Input Tester"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        FontSize="18"
                                        Foreground="White"
                                        VerticalAlignment="Center"
@@ -325,7 +247,7 @@
                               Margin="100,0">
                             <TextBlock x:Name="AboutText"
                                        Text="About"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        FontSize="18"
                                        Foreground="White"
                                        VerticalAlignment="Center"
@@ -335,7 +257,7 @@
                               Margin="100,0">
                             <TextBlock x:Name="ExitText"
                                        Text="Exit"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        FontSize="18"
                                        Foreground="White"
                                        VerticalAlignment="Center"
@@ -352,7 +274,7 @@
                             <TextBlock Text="Controls"
                                        Foreground="White"
                                        FontSize="18"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"/>
                         </Grid>
                         <Grid Grid.Row="1">
@@ -363,9 +285,7 @@
                             <Grid Grid.Column="0">
                                 <Border BorderThickness="0,0,1,0">
                                     <Border.BorderBrush>
-                                        <DrawingBrush Viewport="0,0,16,8"
-                                                      ViewportUnits="Absolute"
-                                                      TileMode="Tile">
+                                        <DrawingBrush DestinationRect="0,0,16,8" TileMode="Tile">
                                             <DrawingBrush.Drawing>
                                                 <DrawingGroup>
                                                     <GeometryDrawing Brush="#777">
@@ -407,17 +327,12 @@
                                                          StrokeThickness="4"
                                                          Stroke="#777"
                                                          Margin="0,0,2,3"/>
-                                                <TextBlock Text="&#10132;"
-                                                           Foreground="White"
-                                                           FontSize="24"
-                                                           Style="{StaticResource Early GameBoy}"
-                                                           VerticalAlignment="Center"
-                                                           HorizontalAlignment="Center"
-                                                           Margin="0,0,10,4">
-                                                    <TextBlock.LayoutTransform>
+                                                <LayoutTransformControl Margin="0,0,10,4" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <LayoutTransformControl.LayoutTransform>
                                                         <RotateTransform Angle="270"/>
-                                                    </TextBlock.LayoutTransform>
-                                                </TextBlock>
+                                                    </LayoutTransformControl.LayoutTransform>
+                                                    <TextBlock Text="&#10132;" Foreground="White" FontSize="24" FontFamily="{StaticResource EarlyGameBoy}"/>
+                                                </LayoutTransformControl>
                                             </Grid>
                                             <!-- Up Text -->
                                             <Grid Grid.Column="1"
@@ -425,7 +340,7 @@
                                                 <TextBlock Text="Up"
                                                            Foreground="White"
                                                            FontSize="14"
-                                                           Style="{StaticResource Early GameBoy}"
+                                                           FontFamily="{StaticResource EarlyGameBoy}"
                                                            VerticalAlignment="Center"/>
                                             </Grid>
                                         </Grid>
@@ -450,17 +365,12 @@
                                                          StrokeThickness="4"
                                                          Stroke="#777"
                                                          Margin="0,0,2,3"/>
-                                                <TextBlock Text="&#10132;"
-                                                           Foreground="White"
-                                                           FontSize="24"
-                                                           Style="{StaticResource Early GameBoy}"
-                                                           VerticalAlignment="Center"
-                                                           HorizontalAlignment="Center"
-                                                           Margin="0,0,-4,4">
-                                                    <TextBlock.LayoutTransform>
+                                                <LayoutTransformControl Margin="0,0,-4,4" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <LayoutTransformControl.LayoutTransform>
                                                         <RotateTransform Angle="90"/>
-                                                    </TextBlock.LayoutTransform>
-                                                </TextBlock>
+                                                    </LayoutTransformControl.LayoutTransform>
+                                                    <TextBlock Text="&#10132;" Foreground="White" FontSize="24" FontFamily="{StaticResource EarlyGameBoy}"/>
+                                                </LayoutTransformControl>
                                             </Grid>
                                             <!-- Down Text -->
                                             <Grid Grid.Column="1"
@@ -468,7 +378,7 @@
                                                 <TextBlock Text="Down"
                                                            Foreground="White"
                                                            FontSize="14"
-                                                           Style="{StaticResource Early GameBoy}"
+                                                           FontFamily="{StaticResource EarlyGameBoy}"
                                                            VerticalAlignment="Center"/>
                                             </Grid>
                                         </Grid>
@@ -478,9 +388,7 @@
                             <Grid Grid.Column="2">
                                 <Border BorderThickness="1,0,0,0">
                                     <Border.BorderBrush>
-                                        <DrawingBrush Viewport="0,0,8,8"
-                                                      ViewportUnits="Absolute"
-                                                      TileMode="Tile">
+                                        <DrawingBrush DestinationRect="0,0,8,8" TileMode="Tile">
                                             <DrawingBrush.Drawing>
                                                 <DrawingGroup>
                                                     <GeometryDrawing Brush="#777">
@@ -524,7 +432,7 @@
                                                 <TextBlock Text="A"
                                                            Foreground="White"
                                                            FontSize="16"
-                                                           Style="{StaticResource Early GameBoy}"
+                                                           FontFamily="{StaticResource EarlyGameBoy}"
                                                            VerticalAlignment="Center"
                                                            HorizontalAlignment="Center"
                                                            Margin="0,0,2,4"/>
@@ -535,7 +443,7 @@
                                                 <TextBlock Text="Select"
                                                            Foreground="White"
                                                            FontSize="12"
-                                                           Style="{StaticResource Early GameBoy}"
+                                                           FontFamily="{StaticResource EarlyGameBoy}"
                                                            VerticalAlignment="Center"/>
                                             </Grid>
                                         </Grid>
@@ -550,7 +458,7 @@
                                    Text="Copyright ©️ 2018 - Now Arcademia, All rights reserved."
                                    Foreground="#777"
                                    FontSize="14"
-                                   Style="{StaticResource Early GameBoy}"
+                                   FontFamily="{StaticResource EarlyGameBoy}"
                                    VerticalAlignment="Top"
                                    HorizontalAlignment="Left"
                                    TextWrapping="Wrap"
@@ -570,21 +478,21 @@
                                    Text="[Arcademia-Launcher]"
                                    Foreground="#777"
                                    FontSize="8"
-                                   Style="{StaticResource Early GameBoy}"
+                                   FontFamily="{StaticResource EarlyGameBoy}"
                                    VerticalAlignment="Top"
                                    HorizontalAlignment="Left"/>
                         <TextBlock Grid.Row="1"
                                    Text="  Developed by Malphatt for Arcademia"
                                    Foreground="#777"
                                    FontSize="8"
-                                   Style="{StaticResource Early GameBoy}"
+                                   FontFamily="{StaticResource EarlyGameBoy}"
                                    VerticalAlignment="Top"
                                    HorizontalAlignment="Left"/>
                         <TextBlock Grid.Row="5"
-                                   Text="{StaticResource LauncherVersion}"
+                                   Text="{x:Static local:AppInfo.VersionLabel}"
                                    Foreground="#777"
                                    FontSize="8"
-                                   Style="{StaticResource Early GameBoy}"
+                                   FontFamily="{StaticResource EarlyGameBoy}"
                                    VerticalAlignment="Top"
                                    HorizontalAlignment="Left"/>
                     </Grid>
@@ -595,31 +503,27 @@
                     <uc:HomeThumbnailScroll x:Name="HomeThumbnailScroll"/>
                     <Canvas>
                         <!-- Lock width of Credits Panel to the Width of HomeMenuImageArea -->
-                        <Grid x:Name="CreditsPanel"
-                              Visibility="Collapsed"
+                        <Grid x:Name="CreditsPanel" IsVisible="False"
                               Canvas.Top="{StaticResource LogicalSizeHeight}"
-                              Width="{Binding ElementName=HomeMenuImageArea, Path=ActualWidth}"
+                              Width="{Binding #HomeMenuImageArea.Bounds.Width}"
                               Margin="50,0,0,0"/>
                         <!-- Logos (Unused)
                         <Image x:Name="UoL_Logo"
-                               Source="/Assets/Images/uolwhite.png"
-                               Visibility="Collapsed"
+                               Source="/Assets/Images/uolwhite.png" IsVisible="False"
                                Opacity="0.8"
                                Width="150"
                                Canvas.Bottom="10"
                                Canvas.Right="10"
                                Stretch="Uniform"/>
                         <Image x:Name="intlab_Logo"
-                               Source="/Assets/Images/intlab.png"
-                               Visibility="Collapsed"
+                               Source="/Assets/Images/intlab.png" IsVisible="False"
                                Opacity="0.8"
                                Width="150"
                                Canvas.Bottom="10"
                                Canvas.Right="170"
                                Stretch="Uniform"/>
                         <Image x:Name="CSS_Logo"
-                               Source="/Assets/Images/css.png"
-                               Visibility="Collapsed"
+                               Source="/Assets/Images/css.png" IsVisible="False"
                                Opacity="0.8"
                                Width="150"
                                Canvas.Bottom="10"
@@ -631,8 +535,7 @@
             </Grid>
 
             <!-- Input Tester -->
-            <Grid x:Name="InputMenu"
-                  Visibility="Collapsed"
+            <Grid x:Name="InputMenu" IsVisible="False"
                   Width="{StaticResource LogicalSizeWidth}"
                   Height="{StaticResource LogicalSizeHeight}">
                 <Grid.Background>
@@ -646,7 +549,7 @@
                     <TextBlock Text="Hold Exit to go back"
                                Foreground="White"
                                FontSize="20"
-                               Style="{StaticResource Early GameBoy}"
+                               FontFamily="{StaticResource EarlyGameBoy}"
                                VerticalAlignment="Top"
                                HorizontalAlignment="Left"
                                Margin="20"/>
@@ -654,14 +557,14 @@
                                Text=""
                                Foreground="Red"
                                FontSize="20"
-                               Style="{StaticResource Early GameBoy}"
+                               FontFamily="{StaticResource EarlyGameBoy}"
                                VerticalAlignment="Top"
                                HorizontalAlignment="Left"
                                Margin="20,50"/>
                     <TextBlock Text="Input Tester"
                                Foreground="White"
                                FontSize="40"
-                               Style="{StaticResource Early GameBoy}"
+                               FontFamily="{StaticResource EarlyGameBoy}"
                                VerticalAlignment="Center"
                                HorizontalAlignment="Center"/>
                 </Grid>
@@ -688,7 +591,7 @@
                                        Text="Exit"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="0,0,175,450"/>
@@ -703,7 +606,7 @@
                                        Text="Start"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="175,0,0,450"/>
@@ -714,56 +617,38 @@
                                      StrokeThickness="5"
                                      Stroke="#B00"
                                      Margin="0,0,0,0"/>
-                            <TextBlock x:Name="InputMenu_P1_Joy_UpText"
-                                       Text=">"
-                                       Foreground="White"
-                                       FontSize="50"
-                                       Style="{StaticResource Early GameBoy}"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Center"
-                                       Margin="5,0,0,200">
-                                <TextBlock.LayoutTransform>
+                            <LayoutTransformControl Margin="5,0,0,200" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <LayoutTransformControl.LayoutTransform>
                                     <RotateTransform Angle="-90"/>
-                                </TextBlock.LayoutTransform>
-                            </TextBlock>
+                                </LayoutTransformControl.LayoutTransform>
+                                <TextBlock x:Name="InputMenu_P1_Joy_UpText" Text=">" Foreground="White" FontSize="50" FontFamily="{StaticResource EarlyGameBoy}"/>
+                            </LayoutTransformControl>
                             <TextBlock x:Name="InputMenu_P1_Joy_RightText"
                                        Text=">"
                                        Foreground="White"
                                        FontSize="50"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="200,5,0,0"/>
-                            <TextBlock x:Name="InputMenu_P1_Joy_DownText"
-                                       Text=">"
-                                       Foreground="White"
-                                       FontSize="50"
-                                       Style="{StaticResource Early GameBoy}"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Center"
-                                       Margin="0,200,8,0">
-                                <TextBlock.LayoutTransform>
+                            <LayoutTransformControl Margin="0,200,8,0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <LayoutTransformControl.LayoutTransform>
                                     <RotateTransform Angle="90"/>
-                                </TextBlock.LayoutTransform>
-                            </TextBlock>
-                            <TextBlock x:Name="InputMenu_P1_Joy_LeftText"
-                                       Text=">"
-                                       Foreground="White"
-                                       FontSize="50"
-                                       Style="{StaticResource Early GameBoy}"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Center"
-                                       Margin="0,0,200,8">
-                                <TextBlock.LayoutTransform>
+                                </LayoutTransformControl.LayoutTransform>
+                                <TextBlock x:Name="InputMenu_P1_Joy_DownText" Text=">" Foreground="White" FontSize="50" FontFamily="{StaticResource EarlyGameBoy}"/>
+                            </LayoutTransformControl>
+                            <LayoutTransformControl Margin="0,0,200,8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <LayoutTransformControl.LayoutTransform>
                                     <RotateTransform Angle="180"/>
-                                </TextBlock.LayoutTransform>
-                            </TextBlock>
+                                </LayoutTransformControl.LayoutTransform>
+                                <TextBlock x:Name="InputMenu_P1_Joy_LeftText" Text=">" Foreground="White" FontSize="50" FontFamily="{StaticResource EarlyGameBoy}"/>
+                            </LayoutTransformControl>
                         </Grid>
                         <Grid Grid.Column="1">
                             <TextBlock Text="Player 1"
                                        Foreground="White"
                                        FontSize="28"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Top"
                                        HorizontalAlignment="Center"
                                        Margin="20"/>
@@ -778,7 +663,7 @@
                                        Text="A"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="0,0,225,275"/>
@@ -793,7 +678,7 @@
                                        Text="B"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="0,0,0,275"/>
@@ -808,7 +693,7 @@
                                        Text="C"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="225,0,0,275"/>
@@ -823,7 +708,7 @@
                                        Text="D"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="0,25,225,0"/>
@@ -838,7 +723,7 @@
                                        Text="E"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="0,25,0,0"/>
@@ -853,7 +738,7 @@
                                        Text="F"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="225,25,0,0"/>
@@ -877,7 +762,7 @@
                                        Text="Exit"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="0,0,175,450"/>
@@ -892,7 +777,7 @@
                                        Text="Start"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="175,0,0,450"/>
@@ -903,56 +788,38 @@
                                      StrokeThickness="5"
                                      Stroke="#B00"
                                      Margin="0,0,0,0"/>
-                            <TextBlock x:Name="InputMenu_P2_Joy_UpText"
-                                       Text=">"
-                                       Foreground="White"
-                                       FontSize="50"
-                                       Style="{StaticResource Early GameBoy}"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Center"
-                                       Margin="5,0,0,200">
-                                <TextBlock.LayoutTransform>
+                            <LayoutTransformControl Margin="5,0,0,200" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <LayoutTransformControl.LayoutTransform>
                                     <RotateTransform Angle="-90"/>
-                                </TextBlock.LayoutTransform>
-                            </TextBlock>
+                                </LayoutTransformControl.LayoutTransform>
+                                <TextBlock x:Name="InputMenu_P2_Joy_UpText" Text=">" Foreground="White" FontSize="50" FontFamily="{StaticResource EarlyGameBoy}"/>
+                            </LayoutTransformControl>
                             <TextBlock x:Name="InputMenu_P2_Joy_RightText"
                                        Text=">"
                                        Foreground="White"
                                        FontSize="50"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="200,5,0,0"/>
-                            <TextBlock x:Name="InputMenu_P2_Joy_DownText"
-                                       Text=">"
-                                       Foreground="White"
-                                       FontSize="50"
-                                       Style="{StaticResource Early GameBoy}"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Center"
-                                       Margin="0,200,8,0">
-                                <TextBlock.LayoutTransform>
+                            <LayoutTransformControl Margin="0,200,8,0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <LayoutTransformControl.LayoutTransform>
                                     <RotateTransform Angle="90"/>
-                                </TextBlock.LayoutTransform>
-                            </TextBlock>
-                            <TextBlock x:Name="InputMenu_P2_Joy_LeftText"
-                                       Text=">"
-                                       Foreground="White"
-                                       FontSize="50"
-                                       Style="{StaticResource Early GameBoy}"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Center"
-                                       Margin="0,0,200,8">
-                                <TextBlock.LayoutTransform>
+                                </LayoutTransformControl.LayoutTransform>
+                                <TextBlock x:Name="InputMenu_P2_Joy_DownText" Text=">" Foreground="White" FontSize="50" FontFamily="{StaticResource EarlyGameBoy}"/>
+                            </LayoutTransformControl>
+                            <LayoutTransformControl Margin="0,0,200,8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <LayoutTransformControl.LayoutTransform>
                                     <RotateTransform Angle="180"/>
-                                </TextBlock.LayoutTransform>
-                            </TextBlock>
+                                </LayoutTransformControl.LayoutTransform>
+                                <TextBlock x:Name="InputMenu_P2_Joy_LeftText" Text=">" Foreground="White" FontSize="50" FontFamily="{StaticResource EarlyGameBoy}"/>
+                            </LayoutTransformControl>
                         </Grid>
                         <Grid Grid.Column="1">
                             <TextBlock Text="Player 2"
                                        Foreground="White"
                                        FontSize="28"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Top"
                                        HorizontalAlignment="Center"
                                        Margin="20"/>
@@ -967,7 +834,7 @@
                                        Text="A"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="0,0,225,275"/>
@@ -982,7 +849,7 @@
                                        Text="B"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="0,0,0,275"/>
@@ -997,7 +864,7 @@
                                        Text="C"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="225,0,0,275"/>
@@ -1012,7 +879,7 @@
                                        Text="D"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="0,25,225,0"/>
@@ -1027,7 +894,7 @@
                                        Text="E"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="0,25,0,0"/>
@@ -1042,7 +909,7 @@
                                        Text="F"
                                        Foreground="White"
                                        FontSize="20"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        VerticalAlignment="Center"
                                        HorizontalAlignment="Center"
                                        Margin="225,25,0,0"/>
@@ -1053,8 +920,7 @@
             </Grid>
 
             <!-- Selection Menu -->
-            <Grid x:Name="SelectionMenu"
-                  Visibility="Collapsed"
+            <Grid x:Name="SelectionMenu" IsVisible="False"
                   Width="{StaticResource LogicalSizeWidth}"
                   Height="{StaticResource LogicalSizeHeight}">
                 <Grid.Background>
@@ -1086,24 +952,19 @@
                                 <ToggleButton x:Name="BackFromGameLibraryButton"
                                               Content="    Go Back"
                                               Click="BackFromGameLibraryButton_Click"
-                                              Style="{StaticResource ToggleButtonStyle}"
+                                              Theme="{StaticResource ToggleButtonStyle}"
                                               FontSize="18"
                                               Background="Transparent"
                                               Foreground="White"
                                               BorderBrush="White"
                                               BorderThickness="3"
                                               Width="180"/>
-                                <TextBlock Text="&#10132;"
-                                           Foreground="White"
-                                           FontSize="28"
-                                           Style="{StaticResource Early GameBoy}"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,0,130,0">
-                                    <TextBlock.LayoutTransform>
+                                <LayoutTransformControl Margin="0,0,130,0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <LayoutTransformControl.LayoutTransform>
                                         <RotateTransform Angle="180"/>
-                                    </TextBlock.LayoutTransform>
-                                </TextBlock>
+                                    </LayoutTransformControl.LayoutTransform>
+                                    <TextBlock Text="&#10132;" Foreground="White" FontSize="28" FontFamily="{StaticResource EarlyGameBoy}"/>
+                                </LayoutTransformControl>
                             </Grid>
                             <Grid Grid.Row="1"
                                   Margin="50,10,0,0">
@@ -1111,7 +972,7 @@
                                            Text="Games"
                                            Foreground="White"
                                            FontSize="32"
-                                           Style="{StaticResource Early GameBoy}"
+                                           FontFamily="{StaticResource EarlyGameBoy}"
                                            VerticalAlignment="Center"
                                            TextWrapping="Wrap"/>
                             </Grid>
@@ -1121,9 +982,7 @@
                                Source="/Assets/Images/Scroll-Arrow.gif"
                                HorizontalAlignment="Center"
                                Stretch="Uniform"
-                               RenderTransformOrigin=".5,.5"
-                               Visibility="Visible"
-                               gif:AnimationBehavior.CacheFramesInMemory="True"
+                               RenderTransformOrigin="50%,50%"
                                gif:AnimationBehavior.SourceUri="/Assets/Images/Scroll-Arrow.gif">
                             <Image.RenderTransform>
                                 <RotateTransform Angle="180"/>
@@ -1134,395 +993,485 @@
                             <UniformGrid Rows="5"
                                     Columns="3">
                                 <!-- TILE 0 -->
-                                <Grid x:Name="GameTile0"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage0"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile0" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage0"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText0"
-                                           Content="Game 1"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText0"
+                                               Content="Game 1"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 1 -->
-                                <Grid x:Name="GameTile1"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage1"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile1" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage1"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText1"
-                                           Content="Game 2"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText1"
+                                               Content="Game 2"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 2 -->
-                                <Grid x:Name="GameTile2"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage2"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile2" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage2"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText2"
-                                           Content="Game 3"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText2"
+                                               Content="Game 3"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 3 -->
-                                <Grid x:Name="GameTile3"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage3"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile3" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage3"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText3"
-                                           Content="Game 4"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText3"
+                                               Content="Game 4"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 4 -->
-                                <Grid x:Name="GameTile4"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage4"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile4" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage4"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText4"
-                                           Content="Game 5"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText4"
+                                               Content="Game 5"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 5 -->
-                                <Grid x:Name="GameTile5"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage5"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile5" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage5"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText5"
-                                           Content="Game 6"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText5"
+                                               Content="Game 6"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 6 -->
-                                <Grid x:Name="GameTile6"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage6"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile6" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage6"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText6"
-                                           Content="Game 7"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText6"
+                                               Content="Game 7"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 7 -->
-                                <Grid x:Name="GameTile7"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage7"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile7" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage7"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText7"
-                                           Content="Game 8"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText7"
+                                               Content="Game 8"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 8 -->
-                                <Grid x:Name="GameTile8"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage8"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile8" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage8"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText8"
-                                           Content="Game 9"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText8"
+                                               Content="Game 9"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 9 -->
-                                <Grid x:Name="GameTile9"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage9"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile9" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage9"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText9"
-                                           Content="Game 10"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText9"
+                                               Content="Game 10"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 10 -->
-                                <Grid x:Name="GameTile10"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage10"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile10" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage10"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText10"
-                                           Content="Game 11"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText10"
+                                               Content="Game 11"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 11 -->
-                                <Grid x:Name="GameTile11"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage11"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile11" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage11"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText11"
-                                           Content="Game 12"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText11"
+                                               Content="Game 12"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 12 -->
-                                <Grid x:Name="GameTile12"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage12"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile12" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage12"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText12"
-                                           Content="Game 13"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText12"
+                                               Content="Game 13"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 13 -->
-                                <Grid x:Name="GameTile13"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage13"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile13" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage13"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText13"
-                                           Content="Game 14"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText13"
+                                               Content="Game 14"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                                 <!-- TILE 14 -->
-                                <Grid x:Name="GameTile14"
-                                      Visibility="Hidden"
-                                      Style="{StaticResource GameTileStyle}">
-                                    <Image x:Name="GameImage14"
-                                           Stretch="UniformToFill"
-                                           Source="/Assets/Images/ThumbnailPlaceholder.png"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <Panel Margin="5"
+                                       ClipToBounds="True">
+                                    <Grid x:Name="GameTile14" utils:VisibilityExtensions.IsHidden="True"
+                                          Width="280"
+                                          Height="120"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Top"
+                                          ClipToBounds="True">
+                                        <Image x:Name="GameImage14"
+                                               Stretch="UniformToFill"
+                                               Source="/Assets/Images/ThumbnailPlaceholder.png"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
 
-                                    <Border Background="#AA000000"
-                                            VerticalAlignment="Bottom"
-                                            Margin="0,0,0,5"
-                                            Height="50"/>
-                                    <Label x:Name="GameTitleText14"
-                                           Content="Game 15"
-                                           Foreground="White"
-                                           FontSize="24"
-                                           HorizontalContentAlignment="Center"
-                                           VerticalContentAlignment="Center"
-                                           VerticalAlignment="Bottom"
-                                           Margin="0,0,0,10"
-                                           Height="45"
-                                           Width="280"
-                                           FontFamily="/Fonts/#Press Start 2P"/>
-                                </Grid>
+                                        <Border Background="#AA000000"
+                                                VerticalAlignment="Bottom"
+                                                Margin="0,0,0,5"
+                                                Height="50"/>
+                                        <Label x:Name="GameTitleText14"
+                                               Content="Game 15"
+                                               Foreground="White"
+                                               FontSize="24"
+                                               HorizontalContentAlignment="Center"
+                                               VerticalContentAlignment="Center"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,10"
+                                               Height="45"
+                                               Width="280"
+                                               FontFamily="{StaticResource EarlyGameBoy}"/>
+                                    </Grid>
+                                </Panel>
                             </UniformGrid>
                         </Grid>
                         <Image Grid.Row="3"
@@ -1530,9 +1479,7 @@
                                Source="/Assets/Images/Scroll-Arrow.gif"
                                HorizontalAlignment="Center"
                                Stretch="Uniform"
-                               RenderTransformOrigin=".5,.5"
-                               Visibility="Visible"
-                               gif:AnimationBehavior.CacheFramesInMemory="True"
+                               RenderTransformOrigin="50%,50%"
                                gif:AnimationBehavior.SourceUri="/Assets/Images/Scroll-Arrow.gif"/>
                         <Grid Grid.Row="4">
                             <Grid Grid.Row="0"
@@ -1545,7 +1492,7 @@
                                     <TextBlock Text="Controls"
                                                Foreground="White"
                                                FontSize="22"
-                                               Style="{StaticResource Early GameBoy}"
+                                               FontFamily="{StaticResource EarlyGameBoy}"
                                                VerticalAlignment="Center"/>
                                 </Grid>
                                 <Grid Grid.Row="1">
@@ -1558,9 +1505,7 @@
                                     <Grid Grid.Column="0">
                                         <Border BorderThickness="0,0,1,0">
                                             <Border.BorderBrush>
-                                                <DrawingBrush Viewport="0,0,16,8"
-                                                              ViewportUnits="Absolute"
-                                                              TileMode="Tile">
+                                                <DrawingBrush DestinationRect="0,0,16,8" TileMode="Tile">
                                                     <DrawingBrush.Drawing>
                                                         <DrawingGroup>
                                                             <GeometryDrawing Brush="#777">
@@ -1602,17 +1547,12 @@
                                                                  StrokeThickness="4"
                                                                  Stroke="#777"
                                                                  Margin="0,0,4,6"/>
-                                                        <TextBlock Text="&#10132;"
-                                                                   Foreground="White"
-                                                                   FontSize="30"
-                                                                   Style="{StaticResource Early GameBoy}"
-                                                                   VerticalAlignment="Center"
-                                                                   HorizontalAlignment="Center"
-                                                                   Margin="0,0,14,6">
-                                                            <TextBlock.LayoutTransform>
+                                                        <LayoutTransformControl Margin="0,0,14,6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <LayoutTransformControl.LayoutTransform>
                                                                 <RotateTransform Angle="270"/>
-                                                            </TextBlock.LayoutTransform>
-                                                        </TextBlock>
+                                                            </LayoutTransformControl.LayoutTransform>
+                                                            <TextBlock Text="&#10132;" Foreground="White" FontSize="30" FontFamily="{StaticResource EarlyGameBoy}"/>
+                                                        </LayoutTransformControl>
                                                     </Grid>
                                                     <!-- Up Text -->
                                                     <Grid Grid.Column="1"
@@ -1620,7 +1560,7 @@
                                                         <TextBlock Text="Up"
                                                                    Foreground="White"
                                                                    FontSize="18"
-                                                                   Style="{StaticResource Early GameBoy}"
+                                                                   FontFamily="{StaticResource EarlyGameBoy}"
                                                                    VerticalAlignment="Center"/>
                                                     </Grid>
                                                 </Grid>
@@ -1645,17 +1585,12 @@
                                                                  StrokeThickness="4"
                                                                  Stroke="#777"
                                                                  Margin="0,0,4,6"/>
-                                                        <TextBlock Text="&#10132;"
-                                                                   Foreground="White"
-                                                                   FontSize="30"
-                                                                   Style="{StaticResource Early GameBoy}"
-                                                                   VerticalAlignment="Center"
-                                                                   HorizontalAlignment="Center"
-                                                                   Margin="0,0,-6,6">
-                                                            <TextBlock.LayoutTransform>
+                                                        <LayoutTransformControl Margin="0,0,-6,6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <LayoutTransformControl.LayoutTransform>
                                                                 <RotateTransform Angle="90"/>
-                                                            </TextBlock.LayoutTransform>
-                                                        </TextBlock>
+                                                            </LayoutTransformControl.LayoutTransform>
+                                                            <TextBlock Text="&#10132;" Foreground="White" FontSize="30" FontFamily="{StaticResource EarlyGameBoy}"/>
+                                                        </LayoutTransformControl>
                                                     </Grid>
                                                     <!-- Down Text -->
                                                     <Grid Grid.Column="1"
@@ -1663,7 +1598,7 @@
                                                         <TextBlock Text="Down"
                                                                    Foreground="White"
                                                                    FontSize="18"
-                                                                   Style="{StaticResource Early GameBoy}"
+                                                                   FontFamily="{StaticResource EarlyGameBoy}"
                                                                    VerticalAlignment="Center"/>
                                                     </Grid>
                                                 </Grid>
@@ -1673,9 +1608,7 @@
                                     <Grid Grid.Column="1">
                                         <Border BorderThickness="1,0,1,0">
                                             <Border.BorderBrush>
-                                                <DrawingBrush Viewport="8,0,16,8"
-                                                              ViewportUnits="Absolute"
-                                                              TileMode="Tile">
+                                                <DrawingBrush DestinationRect="8,0,16,8" TileMode="Tile">
                                                     <DrawingBrush.Drawing>
                                                         <DrawingGroup>
                                                             <GeometryDrawing Brush="#777">
@@ -1717,17 +1650,12 @@
                                                                  StrokeThickness="4"
                                                                  Stroke="#777"
                                                                  Margin="0,0,4,6"/>
-                                                        <TextBlock Text="&#10132;"
-                                                                   Foreground="White"
-                                                                   FontSize="30"
-                                                                   Style="{StaticResource Early GameBoy}"
-                                                                   VerticalAlignment="Center"
-                                                                   HorizontalAlignment="Center"
-                                                                   Margin="0,0,3,-3">
-                                                            <TextBlock.LayoutTransform>
+                                                        <LayoutTransformControl Margin="0,0,3,-3" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <LayoutTransformControl.LayoutTransform>
                                                                 <RotateTransform Angle="180"/>
-                                                            </TextBlock.LayoutTransform>
-                                                        </TextBlock>
+                                                            </LayoutTransformControl.LayoutTransform>
+                                                            <TextBlock Text="&#10132;" Foreground="White" FontSize="30" FontFamily="{StaticResource EarlyGameBoy}"/>
+                                                        </LayoutTransformControl>
                                                     </Grid>
                                                     <!-- Left Text -->
                                                     <Grid Grid.Column="1"
@@ -1735,7 +1663,7 @@
                                                         <TextBlock Text="Left"
                                                                    Foreground="White"
                                                                    FontSize="18"
-                                                                   Style="{StaticResource Early GameBoy}"
+                                                                   FontFamily="{StaticResource EarlyGameBoy}"
                                                                    VerticalAlignment="Center"/>
                                                     </Grid>
                                                 </Grid>
@@ -1760,17 +1688,12 @@
                                                                  StrokeThickness="4"
                                                                  Stroke="#777"
                                                                  Margin="0,0,4,6"/>
-                                                        <TextBlock Text="&#10132;"
-                                                                   Foreground="White"
-                                                                   FontSize="30"
-                                                                   Style="{StaticResource Early GameBoy}"
-                                                                   VerticalAlignment="Center"
-                                                                   HorizontalAlignment="Center"
-                                                                   Margin="0,0,4,15">
-                                                            <TextBlock.LayoutTransform>
+                                                        <LayoutTransformControl Margin="0,0,4,15" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <LayoutTransformControl.LayoutTransform>
                                                                 <RotateTransform Angle="0"/>
-                                                            </TextBlock.LayoutTransform>
-                                                        </TextBlock>
+                                                            </LayoutTransformControl.LayoutTransform>
+                                                            <TextBlock Text="&#10132;" Foreground="White" FontSize="30" FontFamily="{StaticResource EarlyGameBoy}"/>
+                                                        </LayoutTransformControl>
                                                     </Grid>
                                                     <!-- Right Text -->
                                                     <Grid Grid.Column="1"
@@ -1778,7 +1701,7 @@
                                                         <TextBlock Text="Right"
                                                                    Foreground="White"
                                                                    FontSize="18"
-                                                                   Style="{StaticResource Early GameBoy}"
+                                                                   FontFamily="{StaticResource EarlyGameBoy}"
                                                                    VerticalAlignment="Center"/>
                                                     </Grid>
                                                 </Grid>
@@ -1788,9 +1711,7 @@
                                     <Grid Grid.Column="2">
                                         <Border BorderThickness="1,0,0,0">
                                             <Border.BorderBrush>
-                                                <DrawingBrush Viewport="0,0,8,8"
-                                                              ViewportUnits="Absolute"
-                                                              TileMode="Tile">
+                                                <DrawingBrush DestinationRect="0,0,8,8" TileMode="Tile">
                                                     <DrawingBrush.Drawing>
                                                         <DrawingGroup>
                                                             <GeometryDrawing Brush="#777">
@@ -1834,7 +1755,7 @@
                                                         <TextBlock Text="A"
                                                                    Foreground="White"
                                                                    FontSize="20"
-                                                                   Style="{StaticResource Early GameBoy}"
+                                                                   FontFamily="{StaticResource EarlyGameBoy}"
                                                                    VerticalAlignment="Center"
                                                                    HorizontalAlignment="Center"
                                                                    Margin="0,0,0,4"/>
@@ -1845,7 +1766,7 @@
                                                         <TextBlock Text="Select"
                                                                    Foreground="White"
                                                                    FontSize="18"
-                                                                   Style="{StaticResource Early GameBoy}"
+                                                                   FontFamily="{StaticResource EarlyGameBoy}"
                                                                    VerticalAlignment="Center"/>
                                                     </Grid>
                                                 </Grid>
@@ -1873,7 +1794,7 @@
                                                         <TextBlock Text="B"
                                                                    Foreground="White"
                                                                    FontSize="20"
-                                                                   Style="{StaticResource Early GameBoy}"
+                                                                   FontFamily="{StaticResource EarlyGameBoy}"
                                                                    VerticalAlignment="Center"
                                                                    HorizontalAlignment="Center"
                                                                    Margin="0,0,0,4"/>
@@ -1884,7 +1805,7 @@
                                                         <TextBlock Text="Go Back"
                                                                    Foreground="White"
                                                                    FontSize="18"
-                                                                   Style="{StaticResource Early GameBoy}"
+                                                                   FontFamily="{StaticResource EarlyGameBoy}"
                                                                    VerticalAlignment="Center"/>
                                                     </Grid>
                                                 </Grid>
@@ -1922,7 +1843,6 @@
                                 BorderBrush="#FFF"
                                 Margin="25">
                             <Image x:Name="Gif_GameThumbnail"
-                                   gif:AnimationBehavior.CacheFramesInMemory="True"
                                    gif:AnimationBehavior.SourceUri="/Assets/Images/ThumbnailPlaceholder.png"
                                    Stretch="UniformToFill"
                                    HorizontalAlignment="Center"
@@ -1946,7 +1866,7 @@
                                        FontSize="32"
                                        TextWrapping="WrapWithOverflow"
                                        VerticalAlignment="Bottom"
-                                       Style="{StaticResource Early GameBoy}"/>
+                                       FontFamily="{StaticResource EarlyGameBoy}"/>
                         </Grid>
 
                         <!-- Game Author(s) -->
@@ -1956,7 +1876,7 @@
                                        Text=""
                                        Foreground="#777"
                                        FontSize="14"
-                                       Style="{StaticResource Early GameBoy}"
+                                       FontFamily="{StaticResource EarlyGameBoy}"
                                        TextWrapping="Wrap"
                                        LineHeight="15"/>
                         </Grid>
@@ -1965,17 +1885,16 @@
                         <WrapPanel Grid.Row="2"
                                    Orientation="Horizontal"
                                    Margin="50,0">
-                            <WrapPanel.Resources>
-                                <Style TargetType="Border">
+                            <WrapPanel.Styles>
+                                <Style Selector="Border">
                                     <Setter Property="Margin"
                                             Value="2"/>
                                 </Style>
-                            </WrapPanel.Resources>
+                            </WrapPanel.Styles>
 
                             <Border x:Name="GameTagBorder0"
                                     BorderThickness="1"
-                                    BorderBrush="#777"
-                                    Visibility="Hidden">
+                                    BorderBrush="#777" utils:VisibilityExtensions.IsHidden="True">
                                 <TextBlock x:Name="GameTag0"
                                            Text="Tag 1"
                                            Foreground="#777"
@@ -1983,13 +1902,12 @@
                                            Margin="5"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Style="{StaticResource Early GameBoy}"/>
+                                           FontFamily="{StaticResource EarlyGameBoy}"/>
                             </Border>
 
                             <Border x:Name="GameTagBorder1"
                                     BorderThickness="1"
-                                    BorderBrush="#777"
-                                    Visibility="Hidden">
+                                    BorderBrush="#777" utils:VisibilityExtensions.IsHidden="True">
                                 <TextBlock x:Name="GameTag1"
                                            Text="Tag 2"
                                            Foreground="#777"
@@ -1997,13 +1915,12 @@
                                            Margin="5"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Style="{StaticResource Early GameBoy}"/>
+                                           FontFamily="{StaticResource EarlyGameBoy}"/>
                             </Border>
 
                             <Border x:Name="GameTagBorder2"
                                     BorderThickness="1"
-                                    BorderBrush="#777"
-                                    Visibility="Hidden">
+                                    BorderBrush="#777" utils:VisibilityExtensions.IsHidden="True">
                                 <TextBlock x:Name="GameTag2"
                                            Text="Tag 3"
                                            Foreground="#777"
@@ -2011,13 +1928,12 @@
                                            Margin="5"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Style="{StaticResource Early GameBoy}"/>
+                                           FontFamily="{StaticResource EarlyGameBoy}"/>
                             </Border>
 
                             <Border x:Name="GameTagBorder3"
                                     BorderThickness="1"
-                                    BorderBrush="#777"
-                                    Visibility="Hidden">
+                                    BorderBrush="#777" utils:VisibilityExtensions.IsHidden="True">
                                 <TextBlock x:Name="GameTag3"
                                            Text="Tag 4"
                                            Foreground="#777"
@@ -2025,13 +1941,12 @@
                                            Margin="5"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Style="{StaticResource Early GameBoy}"/>
+                                           FontFamily="{StaticResource EarlyGameBoy}"/>
                             </Border>
 
                             <Border x:Name="GameTagBorder4"
                                     BorderThickness="1"
-                                    BorderBrush="#777"
-                                    Visibility="Hidden">
+                                    BorderBrush="#777" utils:VisibilityExtensions.IsHidden="True">
                                 <TextBlock x:Name="GameTag4"
                                            Text="Tag 5"
                                            Foreground="#777"
@@ -2039,13 +1954,12 @@
                                            Margin="5"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Style="{StaticResource Early GameBoy}"/>
+                                           FontFamily="{StaticResource EarlyGameBoy}"/>
                             </Border>
 
                             <Border x:Name="GameTagBorder5"
                                     BorderThickness="1"
-                                    BorderBrush="#777"
-                                    Visibility="Hidden">
+                                    BorderBrush="#777" utils:VisibilityExtensions.IsHidden="True">
                                 <TextBlock x:Name="GameTag5"
                                            Text="Tag 6"
                                            Foreground="#777"
@@ -2053,13 +1967,12 @@
                                            Margin="5"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Style="{StaticResource Early GameBoy}"/>
+                                           FontFamily="{StaticResource EarlyGameBoy}"/>
                             </Border>
 
                             <Border x:Name="GameTagBorder6"
                                     BorderThickness="1"
-                                    BorderBrush="#777"
-                                    Visibility="Hidden">
+                                    BorderBrush="#777" utils:VisibilityExtensions.IsHidden="True">
                                 <TextBlock x:Name="GameTag6"
                                            Text="Tag 7"
                                            Foreground="#777"
@@ -2067,13 +1980,12 @@
                                            Margin="5"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Style="{StaticResource Early GameBoy}"/>
+                                           FontFamily="{StaticResource EarlyGameBoy}"/>
                             </Border>
 
                             <Border x:Name="GameTagBorder7"
                                     BorderThickness="1"
-                                    BorderBrush="#777"
-                                    Visibility="Hidden">
+                                    BorderBrush="#777" utils:VisibilityExtensions.IsHidden="True">
                                 <TextBlock x:Name="GameTag7"
                                            Text="Tag 8"
                                            Foreground="#777"
@@ -2081,13 +1993,12 @@
                                            Margin="5"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Style="{StaticResource Early GameBoy}"/>
+                                           FontFamily="{StaticResource EarlyGameBoy}"/>
                             </Border>
 
                             <Border x:Name="GameTagBorder8"
                                     BorderThickness="1"
-                                    BorderBrush="#777"
-                                    Visibility="Hidden">
+                                    BorderBrush="#777" utils:VisibilityExtensions.IsHidden="True">
                                 <TextBlock x:Name="GameTag8"
                                            Text="Tag 9"
                                            Foreground="#777"
@@ -2095,7 +2006,7 @@
                                            Margin="5"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Style="{StaticResource Early GameBoy}"/>
+                                           FontFamily="{StaticResource EarlyGameBoy}"/>
                             </Border>
                         </WrapPanel>
                     </Grid>
@@ -2107,7 +2018,7 @@
                                    Text="Select a game using the joystick and by pressing A."
                                    Foreground="White"
                                    FontSize="14"
-                                   Style="{StaticResource Early GameBoy}"
+                                   FontFamily="{StaticResource EarlyGameBoy}"
                                    TextWrapping="Wrap"
                                    LineHeight="20"/>
                     </Grid>
@@ -2118,7 +2029,7 @@
                         <ToggleButton x:Name="StartButton"
                                       Content="Checking For Updates..."
                                       Click="StartButton_Click"
-                                      Style="{StaticResource ToggleButtonStyle}"
+                                      Theme="{StaticResource ToggleButtonStyle}"
                                       FontSize="20"
                                       Background="#222"
                                       Foreground="White"
@@ -2135,14 +2046,13 @@
                                    FontSize="10"
                                    VerticalAlignment="Top"
                                    HorizontalAlignment="Right"
-                                   Style="{StaticResource Early GameBoy}"/>
+                                   FontFamily="{StaticResource EarlyGameBoy}"/>
                     </Grid>
                 </Grid>
                 <!-- Quarantine Warning -->
                 <Grid x:Name="QuarantineWarning"
                       Grid.ColumnSpan="2"
-                      Panel.ZIndex="100"
-                      Visibility="Collapsed"
+                      ZIndex="100" IsVisible="False"
                       Background="#E6000000">
                     <Border Width="1360"
                             HorizontalAlignment="Center"
@@ -2163,7 +2073,7 @@
                                     <TextBlock Text="!"
                                                Foreground="Black"
                                                FontSize="40"
-                                               Style="{StaticResource Early GameBoy}"
+                                               FontFamily="{StaticResource EarlyGameBoy}"
                                                HorizontalAlignment="Center"
                                                VerticalAlignment="Bottom"
                                                Margin="6,0,0,6"/>
@@ -2171,7 +2081,7 @@
                                 <TextBlock Text="Quarantined Game"
                                            Foreground="Red"
                                            FontSize="44"
-                                           Style="{StaticResource Early GameBoy}"
+                                           FontFamily="{StaticResource EarlyGameBoy}"
                                            VerticalAlignment="Center"/>
                             </StackPanel>
                             <TextBlock x:Name="QuarantineWarningGame"
@@ -2181,14 +2091,14 @@
                                        Margin="0,50,0,0"
                                        TextAlignment="Center"
                                        TextWrapping="Wrap"
-                                       Style="{StaticResource Early GameBoy}"/>
+                                       FontFamily="{StaticResource EarlyGameBoy}"/>
                             <TextBlock Foreground="White"
                                        FontSize="24"
                                        LineHeight="46"
                                        Margin="0,50,0,0"
                                        TextAlignment="Center"
                                        TextWrapping="Wrap"
-                                       Style="{StaticResource Early GameBoy}">
+                                       FontFamily="{StaticResource EarlyGameBoy}">
                                 <Run Text="This game"/>
                                 <Run Text="may not work properly"
                                      Foreground="Red"/>
@@ -2200,7 +2110,7 @@
                                        Margin="0,30,0,0"
                                        TextAlignment="Center"
                                        TextWrapping="Wrap"
-                                       Style="{StaticResource Early GameBoy}">
+                                       FontFamily="{StaticResource EarlyGameBoy}">
                                 <Run Text="If it gets stuck,"/>
                                 <Run Text="hold Exit for 3 seconds"
                                      Foreground="Red"/>
@@ -2219,7 +2129,7 @@
                                     <TextBlock Foreground="White"
                                                FontSize="22"
                                                TextAlignment="Center"
-                                               Style="{StaticResource Early GameBoy}">
+                                               FontFamily="{StaticResource EarlyGameBoy}">
                                         <Run Text="A / Start"
                                              Foreground="#2ECC71"/>
                                         <Run Text="Play"/>
@@ -2233,7 +2143,7 @@
                                     <TextBlock Foreground="White"
                                                FontSize="22"
                                                TextAlignment="Center"
-                                               Style="{StaticResource Early GameBoy}">
+                                               FontFamily="{StaticResource EarlyGameBoy}">
                                         <Run Text="B / Exit"
                                              Foreground="#AAA"/>
                                         <Run Text="Go Back"/>

@@ -8,20 +8,23 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Interop;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using System.Xml;
 using ArcademiaGameLauncher.Models;
+using ArcademiaGameLauncher.Platform;
 using ArcademiaGameLauncher.Services;
 using ArcademiaGameLauncher.UserControls;
 using ArcademiaGameLauncher.Utils;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Media.Immutable;
+using Avalonia.Platform;
+using Avalonia.VisualTree;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using Serilog;
-using XamlAnimatedGif;
 
 namespace ArcademiaGameLauncher.Windows
 {
@@ -29,9 +32,6 @@ namespace ArcademiaGameLauncher.Windows
     {
         private readonly ILogger<MainWindow> _logger;
         readonly bool production;
-
-        [DllImport("User32.dll")]
-        public static extern int GetAsyncKeyState(Int32 i);
 
         private readonly ISfxPlayer _sfxPlayer;
         private readonly IUpdaterService _updater;
@@ -139,6 +139,8 @@ namespace ArcademiaGameLauncher.Windows
         private const int DevExitKey = 0x78;
         private const int DevExitHoldMs = 1000;
         private const string CloseRequestEventName = @"Local\Arcademia.Launcher.CloseRequested";
+        private LauncherSignals _closeSignals;
+        private int _windowClosing;
         private int _devExitHeldMs = 0;
 
         private int _selectionAnimationFrame = 0;
@@ -199,14 +201,15 @@ namespace ArcademiaGameLauncher.Windows
         private readonly Label[] _gameTitlesList;
         private readonly Image[] _gameImagesList;
 
-        private readonly BitmapImage _placeholderBitmap;
-        private readonly BitmapImage _collectionPlaceholderClosedBitmap;
-        private readonly BitmapImage _collectionPlaceholderOpenBitmap;
+        private readonly Bitmap _placeholderBitmap;
+        private readonly Bitmap _collectionPlaceholderClosedBitmap;
+        private readonly Bitmap _collectionPlaceholderOpenBitmap;
 
-        private readonly System.Windows.Shapes.Ellipse[] _inputMenuJoysticks;
-        private readonly System.Windows.Shapes.Ellipse[][] _inputMenuButtons;
+        private readonly Avalonia.Controls.Shapes.Ellipse[] _inputMenuJoysticks;
+        private readonly Avalonia.Controls.Shapes.Ellipse[][] _inputMenuButtons;
 
         private Process _currentlyRunningProcess = null;
+        private string _runningGameSessionId;
 
         private GameState[] _gameTitleStates;
 
@@ -228,6 +231,7 @@ namespace ArcademiaGameLauncher.Windows
         private readonly ISessionClaimCoordinator _sessionClaims;
         private readonly IAchievementCache _achievementCache;
         private readonly IGameLogService _gameLogs;
+        private readonly IGameRunner _gameRunner;
 
         private readonly AchievementToastWindow _toastWindow;
         private readonly AchievementsOverlayWindow _overlayWindow;
@@ -250,6 +254,7 @@ namespace ArcademiaGameLauncher.Windows
             ISessionClaimCoordinator sessionClaims,
             IAchievementCache achievementCache,
             IGameLogService gameLogs,
+            IGameRunner gameRunner,
             JObject config,
             string applicationPath,
             ILoggerFactory loggerFactory
@@ -268,42 +273,24 @@ namespace ArcademiaGameLauncher.Windows
             _sessionClaims = sessionClaims;
             _achievementCache = achievementCache;
             _gameLogs = gameLogs;
+            _gameRunner = gameRunner;
             _config = config;
             _applicationPath = applicationPath;
 
             production = _applicationPath.EndsWith("Launcher");
             _gameDirectoryPath = Path.Combine(_applicationPath, "Games");
 
-            _placeholderBitmap = new BitmapImage();
-            _placeholderBitmap.BeginInit();
-            _placeholderBitmap.UriSource = new Uri(
-                "/Assets/Images/ThumbnailPlaceholder.png",
-                UriKind.Relative
+            _placeholderBitmap = new Bitmap(
+                AssetLoader.Open(AchievementVisuals.Pack("Assets/Images/ThumbnailPlaceholder.png"))
             );
-            _placeholderBitmap.CacheOption = BitmapCacheOption.OnLoad;
-            _placeholderBitmap.CreateOptions = BitmapCreateOptions.DelayCreation;
-            _placeholderBitmap.EndInit();
-            _placeholderBitmap.Freeze();
 
-            _collectionPlaceholderClosedBitmap = new BitmapImage();
-            _collectionPlaceholderClosedBitmap.BeginInit();
-            _collectionPlaceholderClosedBitmap.UriSource = new Uri(
-                "pack://application:,,,/Assets/Images/CollectionPlaceholder_Closed.png",
-                UriKind.Absolute
+            _collectionPlaceholderClosedBitmap = new Bitmap(
+                AssetLoader.Open(AchievementVisuals.Pack("Assets/Images/CollectionPlaceholder_Closed.png"))
             );
-            _collectionPlaceholderClosedBitmap.CacheOption = BitmapCacheOption.OnLoad;
-            _collectionPlaceholderClosedBitmap.EndInit();
-            _collectionPlaceholderClosedBitmap.Freeze();
 
-            _collectionPlaceholderOpenBitmap = new BitmapImage();
-            _collectionPlaceholderOpenBitmap.BeginInit();
-            _collectionPlaceholderOpenBitmap.UriSource = new Uri(
-                "pack://application:,,,/Assets/Images/CollectionPlaceholder_Open.png",
-                UriKind.Absolute
+            _collectionPlaceholderOpenBitmap = new Bitmap(
+                AssetLoader.Open(AchievementVisuals.Pack("Assets/Images/CollectionPlaceholder_Open.png"))
             );
-            _collectionPlaceholderOpenBitmap.CacheOption = BitmapCacheOption.OnLoad;
-            _collectionPlaceholderOpenBitmap.EndInit();
-            _collectionPlaceholderOpenBitmap.Freeze();
 
             // Setup closing event
             Closing += Window_Closing;
@@ -319,9 +306,21 @@ namespace ArcademiaGameLauncher.Windows
             _overlayWindow = new AchievementsOverlayWindow(GetGameWindowHandle);
             _sessionClaimWindow = new SessionClaimWindow();
 
-            _toastWindow.IsVisibleChanged += (_, _) => ApplyWindowZOrder();
-            _infoWindow.IsVisibleChanged += (_, _) => ApplyWindowZOrder();
-            _claimWindow.IsVisibleChanged += (_, _) => ApplyWindowZOrder();
+            _toastWindow.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == IsVisibleProperty)
+                    ApplyWindowZOrder();
+            };
+            _infoWindow.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == IsVisibleProperty)
+                    ApplyWindowZOrder();
+            };
+            _claimWindow.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == IsVisibleProperty)
+                    ApplyWindowZOrder();
+            };
 
             _achievementSession.ToastRequested += toast =>
                 Dispatcher?.InvokeAsync(() => _toastWindow.Enqueue(toast));
@@ -379,7 +378,7 @@ namespace ArcademiaGameLauncher.Windows
             _inputMenuJoysticks = [InputMenu_P1_Joy, InputMenu_P2_Joy];
 
             // Setup Input Buttons
-            _inputMenuButtons = new System.Windows.Shapes.Ellipse[2][];
+            _inputMenuButtons = new Avalonia.Controls.Shapes.Ellipse[2][];
             _inputMenuButtons[0] =
             [
                 InputMenu_P1_Exit,
@@ -447,8 +446,8 @@ namespace ArcademiaGameLauncher.Windows
             _updater.DownloadSiteLogo();
 
             // Set the locations of each item on the start menu
-            string logicalScreenWidth_str = TryFindResource("LogicalSizeWidth").ToString();
-            string logicalScreenHeight_str = TryFindResource("LogicalSizeHeight").ToString();
+            string logicalScreenWidth_str = FindResourceValue("LogicalSizeWidth").ToString();
+            string logicalScreenHeight_str = FindResourceValue("LogicalSizeHeight").ToString();
 
             double logicalScreenWidth = double.Parse(logicalScreenWidth_str);
             double logicalScreenHeight = double.Parse(logicalScreenHeight_str);
@@ -494,7 +493,7 @@ namespace ArcademiaGameLauncher.Windows
             //Canvas.SetRight(CSS_Logo, 2 * (10 + logoWidth));
 
             // Show the Start Menu
-            StartMenu.Visibility = Visibility.Visible;
+            StartMenu.IsVisible = true;
             _isStartMenuVisible = true;
 
             // Start the Debug Watchdog
@@ -752,10 +751,10 @@ namespace ArcademiaGameLauncher.Windows
                                         minFontSize: 8,
                                         precision: 0.1
                                     );
-                                _gameTilesList[i % _tilesPerPage].Visibility = Visibility.Visible;
+                                _gameTilesList[i % _tilesPerPage].SetHidden(false);
                             }
                             else
-                                _gameTilesList[i % _tilesPerPage].Visibility = Visibility.Hidden;
+                                _gameTilesList[i % _tilesPerPage].SetHidden(true);
                         }
                     });
 
@@ -951,12 +950,7 @@ namespace ArcademiaGameLauncher.Windows
                                 await File.WriteAllBytesAsync(tempPath, bytes);
 
                                 // Decode first frame as a frozen BitmapImage so the slot isn't empty while AnimationBehavior initialises the animation
-                                var firstFrame = new BitmapImage();
-                                firstFrame.BeginInit();
-                                firstFrame.StreamSource = new MemoryStream(bytes);
-                                firstFrame.CacheOption = BitmapCacheOption.OnLoad;
-                                firstFrame.EndInit();
-                                firstFrame.Freeze();
+                                var firstFrame = new Bitmap(new MemoryStream(bytes));
 
                                 entry = new ThumbnailEntry(firstFrame, tempPath);
                                 lock (_scrollCacheLock)
@@ -967,12 +961,7 @@ namespace ArcademiaGameLauncher.Windows
                             }
                             else
                             {
-                                var bmp = new BitmapImage();
-                                bmp.BeginInit();
-                                bmp.StreamSource = new MemoryStream(bytes);
-                                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                                bmp.EndInit();
-                                bmp.Freeze();
+                                var bmp = new Bitmap(new MemoryStream(bytes));
                                 entry = new ThumbnailEntry(bmp);
 
                                 lock (_scrollCacheLock)
@@ -1033,10 +1022,10 @@ namespace ArcademiaGameLauncher.Windows
                             if (i < _currentGameWorkingList.Length)
                             {
                                 _gameTitlesList[i % _tilesPerPage].Content = "Loading...";
-                                _gameTilesList[i % _tilesPerPage].Visibility = Visibility.Visible;
+                                _gameTilesList[i % _tilesPerPage].SetHidden(false);
                             }
                             else
-                                _gameTilesList[i % _tilesPerPage].Visibility = Visibility.Hidden;
+                                _gameTilesList[i % _tilesPerPage].SetHidden(true);
                         }
                     });
 
@@ -1072,13 +1061,13 @@ namespace ArcademiaGameLauncher.Windows
                     if (_logger.IsEnabled(LogLevel.Debug))
                         _logger.LogDebug("[Navigation] GameLibraryButton_Click: Start");
 
-                    StartMenu.Visibility = Visibility.Collapsed;
+                    StartMenu.IsVisible = false;
                     _isStartMenuVisible = false;
-                    HomeMenu.Visibility = Visibility.Collapsed;
+                    HomeMenu.IsVisible = false;
                     _isHomeMenuVisible = false;
-                    SelectionMenu.Visibility = Visibility.Visible;
+                    SelectionMenu.IsVisible = true;
                     _isSelectionMenuVisible = true;
-                    InputMenu.Visibility = Visibility.Collapsed;
+                    InputMenu.IsVisible = false;
                     _isInputMenuVisible = false;
 
                     SelectionMenuHeaderText.Text = _isBrowsingCollectionsTopLevel
@@ -1146,13 +1135,13 @@ namespace ArcademiaGameLauncher.Windows
                     if (_logger.IsEnabled(LogLevel.Debug))
                         _logger.LogDebug("[Navigation] InputMenuButton_Click: Start");
 
-                    StartMenu.Visibility = Visibility.Collapsed;
+                    StartMenu.IsVisible = false;
                     _isStartMenuVisible = false;
-                    HomeMenu.Visibility = Visibility.Collapsed;
+                    HomeMenu.IsVisible = false;
                     _isHomeMenuVisible = false;
-                    SelectionMenu.Visibility = Visibility.Collapsed;
+                    SelectionMenu.IsVisible = false;
                     _isSelectionMenuVisible = false;
-                    InputMenu.Visibility = Visibility.Visible;
+                    InputMenu.IsVisible = true;
                     _isInputMenuVisible = true;
 
                     if (_logger.IsEnabled(LogLevel.Debug))
@@ -1180,26 +1169,26 @@ namespace ArcademiaGameLauncher.Windows
                     if (_logger.IsEnabled(LogLevel.Debug))
                         _logger.LogDebug("[Navigation] AboutButton_Click: Start");
 
-                    StartMenu.Visibility = Visibility.Collapsed;
+                    StartMenu.IsVisible = false;
                     _isStartMenuVisible = false;
-                    HomeMenu.Visibility = Visibility.Visible;
+                    HomeMenu.IsVisible = true;
                     _isHomeMenuVisible = true;
-                    SelectionMenu.Visibility = Visibility.Collapsed;
+                    SelectionMenu.IsVisible = false;
                     _isSelectionMenuVisible = false;
-                    InputMenu.Visibility = Visibility.Collapsed;
+                    InputMenu.IsVisible = false;
                     _isInputMenuVisible = false;
 
                     HomeThumbnailScroll.Opacity = 0.2;
-                    CreditsPanel.Visibility = Visibility.Visible;
+                    CreditsPanel.IsVisible = true;
                     _isCreditsVisible = true;
 
                     //// Show the CreditsPanel Logos
-                    //UoL_Logo.Visibility = Visibility.Visible;
-                    //intlab_Logo.Visibility = Visibility.Visible;
-                    //CSS_Logo.Visibility = Visibility.Visible;
+                    //UoL_Logo.IsVisible = true;
+                    //intlab_Logo.IsVisible = true;
+                    //CSS_Logo.IsVisible = true;
 
                     // Set Canvas.Top of the CreditsPanel to the screen height
-                    string logicalScreenHeight_str = TryFindResource("LogicalSizeHeight")
+                    string logicalScreenHeight_str = FindResourceValue("LogicalSizeHeight")
                         .ToString();
                     double logicalScreenHeight = double.Parse(logicalScreenHeight_str);
 
@@ -1230,23 +1219,23 @@ namespace ArcademiaGameLauncher.Windows
                     if (_logger.IsEnabled(LogLevel.Debug))
                         _logger.LogDebug("[Navigation] ExitButton_Click: Start");
 
-                    StartMenu.Visibility = Visibility.Visible;
+                    StartMenu.IsVisible = true;
                     _isStartMenuVisible = true;
-                    HomeMenu.Visibility = Visibility.Collapsed;
+                    HomeMenu.IsVisible = false;
                     _isHomeMenuVisible = false;
-                    SelectionMenu.Visibility = Visibility.Collapsed;
+                    SelectionMenu.IsVisible = false;
                     _isSelectionMenuVisible = false;
-                    InputMenu.Visibility = Visibility.Collapsed;
+                    InputMenu.IsVisible = false;
                     _isInputMenuVisible = false;
 
                     HomeThumbnailScroll.Opacity = 1;
-                    CreditsPanel.Visibility = Visibility.Collapsed;
+                    CreditsPanel.IsVisible = false;
                     _isCreditsVisible = false;
 
                     //// Hide the CreditsPanel Logos
-                    //UoL_Logo.Visibility = Visibility.Collapsed;
-                    //intlab_Logo.Visibility = Visibility.Collapsed;
-                    //CSS_Logo.Visibility = Visibility.Collapsed;
+                    //UoL_Logo.IsVisible = false;
+                    //intlab_Logo.IsVisible = false;
+                    //CSS_Logo.IsVisible = false;
 
                     if (_logger.IsEnabled(LogLevel.Debug))
                         _logger.LogDebug("[Navigation] ExitButton_Click: End");
@@ -1302,9 +1291,9 @@ namespace ArcademiaGameLauncher.Windows
                     if (_logger.IsEnabled(LogLevel.Debug))
                         _logger.LogDebug("[Navigation] BackFromGameLibraryButton_Click: Start");
 
-                    StartMenu.Visibility = Visibility.Collapsed;
+                    StartMenu.IsVisible = false;
                     _isStartMenuVisible = false;
-                    InputMenu.Visibility = Visibility.Collapsed;
+                    InputMenu.IsVisible = false;
                     _isInputMenuVisible = false;
 
                     if (_isBrowsingCollectionsTopLevel)
@@ -1314,9 +1303,9 @@ namespace ArcademiaGameLauncher.Windows
                     }
                     else
                     {
-                        SelectionMenu.Visibility = Visibility.Collapsed;
+                        SelectionMenu.IsVisible = false;
                         _isSelectionMenuVisible = false;
-                        HomeMenu.Visibility = Visibility.Visible;
+                        HomeMenu.IsVisible = true;
                         _isHomeMenuVisible = true;
                     }
 
@@ -1412,10 +1401,13 @@ namespace ArcademiaGameLauncher.Windows
                         (int)launchingGame["Id"],
                         launchingGame["Name"]?.ToString()
                     );
+                    _gameRunner.Wrap(startInfo, sdkEnvironment.BridgePort);
+                    GameWindowFinder.ExpectedExecutable = Path.GetFileName(currentGameExe);
 
                     Process startedProcess;
                     try
                     {
+                        _runningGameSessionId = sdkSessionId;
                         _currentlyRunningProcess = startedProcess = Process.Start(startInfo);
                         _gameLogs.Attach(startedProcess);
                     }
@@ -1491,13 +1483,13 @@ namespace ArcademiaGameLauncher.Windows
                         if (_logger.IsEnabled(LogLevel.Debug))
                             _logger.LogDebug("[First Input] Key_Pressed: Start");
 
-                        StartMenu.Visibility = Visibility.Collapsed;
+                        StartMenu.IsVisible = false;
                         _isStartMenuVisible = false;
-                        HomeMenu.Visibility = Visibility.Visible;
+                        HomeMenu.IsVisible = true;
                         _isHomeMenuVisible = true;
-                        SelectionMenu.Visibility = Visibility.Collapsed;
+                        SelectionMenu.IsVisible = false;
                         _isSelectionMenuVisible = false;
-                        InputMenu.Visibility = Visibility.Collapsed;
+                        InputMenu.IsVisible = false;
                         _isInputMenuVisible = false;
 
                         _currentlySelectedHomeIndex = 0;
@@ -1521,15 +1513,6 @@ namespace ArcademiaGameLauncher.Windows
         {
             _timeSinceLastButton = 0;
             _controllerManager.ReleaseAllButtons();
-        }
-
-        protected override void OnSourceInitialized(EventArgs e)
-        {
-            base.OnSourceInitialized(e);
-
-            if (_infoWindow != null)
-            {
-            }
         }
 
         private async void StartWatchdog()
@@ -1565,9 +1548,9 @@ namespace ArcademiaGameLauncher.Windows
                                             ref _lastUiHeartbeatTicks,
                                             DateTime.UtcNow.Ticks
                                         ),
-                                    System.Windows.Threading.DispatcherPriority.Send
+                                    Avalonia.Threading.DispatcherPriority.Send
                                 )
-                                .Task;
+                                .GetTask();
                             var winner = await Task.WhenAny(
                                 pingTask,
                                 Task.Delay(UiStallCheckIntervalSeconds * 1000 - 1000)
@@ -1601,6 +1584,17 @@ namespace ArcademiaGameLauncher.Windows
 
         private void ListenForCloseRequests()
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                _closeSignals = LauncherSignals.Listen(() =>
+                {
+                    _logger.LogInformation("[System] Close requested by the updater");
+                    Window_Closing(null, null);
+                });
+                Opened += (_, _) => _closeSignals.StartHeartbeat();
+                return;
+            }
+
             EventWaitHandle closeRequested;
             try
             {
@@ -1694,7 +1688,7 @@ namespace ArcademiaGameLauncher.Windows
                 try
                 {
                     if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
-                        _currentlyRunningProcess.Kill(true);
+                        KillRunningGame();
                 }
                 catch { }
 
@@ -1740,7 +1734,7 @@ namespace ArcademiaGameLauncher.Windows
                     return;
 
                 _currentStep = "Keyboard Check";
-                if ((GetAsyncKeyState(DevExitKey) & 0x8000) != 0)
+                if (KeyState.IsDown(DevExitKey))
                 {
                     _devExitHeldMs += frameMs;
                     if (_devExitHeldMs >= DevExitHoldMs)
@@ -1887,38 +1881,17 @@ namespace ArcademiaGameLauncher.Windows
                 )
                     return;
 
-                IntPtr infoHandle = IntPtr.Zero;
-                if (_infoWindow != null)
-                {
-                    try
-                    {
-                        infoHandle = new WindowInteropHelper(_infoWindow).Handle;
-                    }
-                    catch { }
-                }
+                IntPtr infoHandle = WindowHelper.HandleOf(_infoWindow);
 
-                IntPtr claimHandle = IntPtr.Zero;
-                if (_claimWindow != null)
-                {
-                    try
-                    {
-                        claimHandle = new WindowInteropHelper(_claimWindow).Handle;
-                    }
-                    catch { }
-                }
+                IntPtr claimHandle = WindowHelper.HandleOf(_claimWindow);
 
-                IntPtr launcherHandle = IntPtr.Zero;
-                try
-                {
-                    launcherHandle = new WindowInteropHelper(this).Handle;
-                }
-                catch { }
+                IntPtr launcherHandle = WindowHelper.HandleOf(this);
 
                 IntPtr modalHandle = IntPtr.Zero;
                 if (_overlayWindow.IsOpen)
                     modalHandle = _overlayWindow.Handle;
                 else if (_sessionClaimWindow.IsOpen)
-                    modalHandle = new WindowInteropHelper(_sessionClaimWindow).Handle;
+                    modalHandle = WindowHelper.HandleOf(_sessionClaimWindow);
 
                 if (modalHandle != IntPtr.Zero)
                 {
@@ -1944,7 +1917,7 @@ namespace ArcademiaGameLauncher.Windows
                         if (_sessionClaimWindow.IsOpen)
                             _sessionClaimWindow.KeepOnTop();
                     },
-                    System.Windows.Threading.DispatcherPriority.Background
+                    Avalonia.Threading.DispatcherPriority.Background
                 );
             });
         }
@@ -1956,21 +1929,7 @@ namespace ArcademiaGameLauncher.Windows
                 if (_claimWindow == null)
                     return;
 
-                double targetWidth = this.ActualWidth;
-                double targetHeight = this.ActualHeight;
-
-                double claimWidth =
-                    _claimWindow.ActualWidth > 0 ? _claimWindow.ActualWidth : _claimWindow.Width;
-                double claimHeight =
-                    _claimWindow.ActualHeight > 0 ? _claimWindow.ActualHeight : _claimWindow.Height;
-
-                if (double.IsNaN(claimWidth))
-                    claimWidth = 1000;
-                if (double.IsNaN(claimHeight))
-                    claimHeight = 600;
-
-                _claimWindow.Left = this.Left + (targetWidth - claimWidth) / 2;
-                _claimWindow.Top = this.Top + (targetHeight - claimHeight) / 2;
+                WindowHelper.CenterOver(_claimWindow, this, 1000, 600);
             });
         }
 
@@ -1997,31 +1956,13 @@ namespace ArcademiaGameLauncher.Windows
             Dispatcher?.InvokeAsync(() =>
             {
                 if (_infoWindow != null)
-                {
-                    double targetWidth = this.ActualWidth;
-                    double targetHeight = this.ActualHeight;
-
-                    double infoWidth =
-                        _infoWindow.ActualWidth > 0 ? _infoWindow.ActualWidth : _infoWindow.Width;
-                    double infoHeight =
-                        _infoWindow.ActualHeight > 0
-                            ? _infoWindow.ActualHeight
-                            : _infoWindow.Height;
-
-                    if (double.IsNaN(infoWidth))
-                        infoWidth = 1000;
-                    if (double.IsNaN(infoHeight))
-                        infoHeight = 600;
-
-                    _infoWindow.Left = this.Left + (targetWidth - infoWidth) / 2;
-                    _infoWindow.Top = this.Top + (targetHeight - infoHeight) / 2;
-                }
+                    WindowHelper.CenterOver(_infoWindow, this, 1000, 600);
             });
         }
 
         private bool IsExitHeld() =>
             _controllerManager.GetEitherButtonState(ControllerState.ControllerActions.Exit)
-            || (GetAsyncKeyState(EscapeKey) & 0x8000) != 0;
+            || KeyState.IsDown(EscapeKey);
 
         private void HandleExitLogic()
         {
@@ -2097,7 +2038,7 @@ namespace ArcademiaGameLauncher.Windows
                                     && !_currentlyRunningProcess.HasExited
                                 )
                                 {
-                                    _currentlyRunningProcess.Kill(true);
+                                    KillRunningGame();
 
                                     _logger.LogInformation(
                                         "[Force Exit] Process killed successfully."
@@ -2155,6 +2096,7 @@ namespace ArcademiaGameLauncher.Windows
             else if (_currentlyRunningProcess != null && _currentlyRunningProcess.HasExited)
             {
                 _logger.LogInformation("[Game Exit] Game exited naturally.");
+                CleanUpGameProcesses();
 
                 SetGameTitleState(_currentlySelectedGameIndex, GameState.ready);
                 ResetControllerStates();
@@ -2175,6 +2117,22 @@ namespace ArcademiaGameLauncher.Windows
                 _isInfoWindowVisible = false;
                 _isInfoWindowForceExitVisible = false;
             }
+        }
+
+        private void KillRunningGame()
+        {
+            _currentlyRunningProcess?.Kill(true);
+            CleanUpGameProcesses();
+        }
+
+        private void CleanUpGameProcesses()
+        {
+            if (OperatingSystem.IsWindows() || _runningGameSessionId == null)
+                return;
+
+            var killed = GameRunner.KillSession(_runningGameSessionId);
+            if (killed > 0)
+                _logger.LogInformation("[Game Exit] Stopped {Count} leftover game processes", killed);
         }
 
         private IntPtr GetGameWindowHandle()
@@ -2301,7 +2259,7 @@ namespace ArcademiaGameLauncher.Windows
                     ResetControllerStates();
                     try
                     {
-                        _currentlyRunningProcess.Kill(true);
+                        KillRunningGame();
                     }
                     catch { }
                     _ = _sessionTracking.EndSessionAsync("AFK");
@@ -2314,15 +2272,15 @@ namespace ArcademiaGameLauncher.Windows
                     "ResetView",
                     () =>
                     {
-                        StartMenu.Visibility = Visibility.Visible;
+                        StartMenu.IsVisible = true;
                         _isStartMenuVisible = true;
-                        HomeMenu.Visibility = Visibility.Collapsed;
+                        HomeMenu.IsVisible = false;
                         _isHomeMenuVisible = false;
-                        SelectionMenu.Visibility = Visibility.Collapsed;
+                        SelectionMenu.IsVisible = false;
                         _isSelectionMenuVisible = false;
-                        InputMenu.Visibility = Visibility.Collapsed;
+                        InputMenu.IsVisible = false;
                         _isInputMenuVisible = false;
-                        QuarantineWarning.Visibility = Visibility.Collapsed;
+                        QuarantineWarning.IsVisible = false;
                         _isQuarantineWarningVisible = false;
 
                         ApplyWindowZOrder();
@@ -2401,10 +2359,7 @@ namespace ArcademiaGameLauncher.Windows
                 {
                     Application.Current?.Dispatcher?.InvokeAsync(
                         () =>
-                            PressStartText.Visibility =
-                                PressStartText.Visibility == Visibility.Visible
-                                    ? Visibility.Hidden
-                                    : Visibility.Visible
+                            PressStartText.SetHidden(!PressStartText.IsHidden())
                     );
                 }
             }
@@ -2424,11 +2379,11 @@ namespace ArcademiaGameLauncher.Windows
                     if (_logger.IsEnabled(LogLevel.Debug))
                         _logger.LogDebug("[Updater] Updater_LogoDownloaded: Start");
 
-                    StartMenu_ArcademiaLogo.Source = new BitmapImage(
-                        new Uri(Path.Combine(_applicationPath, "Arcademia_Logo.png"))
+                    StartMenu_ArcademiaLogo.Source = new Bitmap(
+                        Path.Combine(_applicationPath, "Arcademia_Logo.png")
                     );
-                    HomeMenu_ArcademiaLogo.Source = new BitmapImage(
-                        new Uri(Path.Combine(_applicationPath, "Arcademia_Logo.png"))
+                    HomeMenu_ArcademiaLogo.Source = new Bitmap(
+                        Path.Combine(_applicationPath, "Arcademia_Logo.png")
                     );
 
                     if (_logger.IsEnabled(LogLevel.Debug))
@@ -2578,10 +2533,10 @@ namespace ArcademiaGameLauncher.Windows
                                 != _currentGameWorkingList[i]["Name"].ToString()
                             )
                                 _gameTitlesList[i % _tilesPerPage].Content = "Loading...";
-                            _gameTilesList[i % _tilesPerPage].Visibility = Visibility.Visible;
+                            _gameTilesList[i % _tilesPerPage].SetHidden(false);
                         }
                         else
-                            _gameTilesList[i % _tilesPerPage].Visibility = Visibility.Hidden;
+                            _gameTilesList[i % _tilesPerPage].SetHidden(true);
                     });
                 }
 
@@ -2702,7 +2657,7 @@ namespace ArcademiaGameLauncher.Windows
                                 minFontSize: 8,
                                 precision: 0.1
                             );
-                        _gameTitlesList[gameIndex % _tilesPerPage].Visibility = Visibility.Visible;
+                        _gameTitlesList[gameIndex % _tilesPerPage].IsVisible = true;
 
                         // Update the game image
                         if (imageUri != null)
@@ -2736,14 +2691,14 @@ namespace ArcademiaGameLauncher.Windows
                     if (_logger.IsEnabled(LogLevel.Debug))
                         _logger.LogDebug("[Updater] Updater_CloseGameAndUpdater: Start");
 
-                    StartMenu.Visibility = Visibility.Collapsed;
+                    StartMenu.IsVisible = false;
                     _isStartMenuVisible = false;
-                    HomeMenu.Visibility = Visibility.Collapsed;
+                    HomeMenu.IsVisible = false;
                     _isHomeMenuVisible = false;
-                    SelectionMenu.Visibility = Visibility.Collapsed;
+                    SelectionMenu.IsVisible = false;
                     _isSelectionMenuVisible = false;
 
-                    MaintenanceScreen.Visibility = Visibility.Visible;
+                    MaintenanceScreen.IsVisible = true;
                     _isMaintenanceVisible = true;
 
                     if (_logger.IsEnabled(LogLevel.Debug))
@@ -2759,7 +2714,7 @@ namespace ArcademiaGameLauncher.Windows
             // Close the currently running process
             if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
             {
-                _currentlyRunningProcess.Kill(true);
+                KillRunningGame();
 
                 _ = _socket.SafeReportStatus("Idle");
                 _currentlyRunningProcess = null;
@@ -2779,7 +2734,7 @@ namespace ArcademiaGameLauncher.Windows
         {
             // Start the new updater
             var updaterPath = UpdaterProcessNames
-                .Select(name => Path.Combine(Directory.GetCurrentDirectory(), name + ".exe"))
+                .Select(name => Path.Combine(Directory.GetCurrentDirectory(), name + (OperatingSystem.IsWindows() ? ".exe" : "")))
                 .FirstOrDefault(File.Exists);
             if (updaterPath != null)
                 Process.Start(updaterPath);
@@ -2791,10 +2746,15 @@ namespace ArcademiaGameLauncher.Windows
 
         private void Window_Closing(object sender, CancelEventArgs e)
         {
+            if (Interlocked.Exchange(ref _windowClosing, 1) == 1)
+                return;
+
+            _closeSignals?.Dispose();
+
             // Close the currently running process
             if (_currentlyRunningProcess != null && !_currentlyRunningProcess.HasExited)
             {
-                _currentlyRunningProcess.Kill(true);
+                KillRunningGame();
 
                 _ = _socket.SafeReportStatus("Idle");
                 _currentlyRunningProcess = null;
@@ -2826,7 +2786,7 @@ namespace ArcademiaGameLauncher.Windows
             {
                 if (_logger.IsEnabled(LogLevel.Information))
                     _logger.LogInformation("[System] RestartLauncher: Start");
-                Application.Current?.Shutdown();
+                App.Shutdown();
                 if (_logger.IsEnabled(LogLevel.Information))
                     _logger.LogInformation("[System] RestartLauncher: End");
             });
@@ -2852,11 +2812,11 @@ namespace ArcademiaGameLauncher.Windows
                         Canvas.SetTop(CreditsPanel, newTop);
 
                         // If the CreditsPanel is off the screen, reset it to the bottom
-                        string logicalScreenHeight_str = TryFindResource("LogicalSizeHeight")
+                        string logicalScreenHeight_str = FindResourceValue("LogicalSizeHeight")
                             .ToString();
                         double logicalScreenHeight = double.Parse(logicalScreenHeight_str);
 
-                        if (newTop < -CreditsPanel.ActualHeight)
+                        if (newTop < -CreditsPanel.Bounds.Height)
                             Canvas.SetTop(CreditsPanel, logicalScreenHeight);
                     }
                     finally
@@ -3231,7 +3191,7 @@ namespace ArcademiaGameLauncher.Windows
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
                 QuarantineWarningGame.Text = gameName ?? "";
-                QuarantineWarning.Visibility = Visibility.Visible;
+                QuarantineWarning.IsVisible = true;
             });
         }
 
@@ -3239,7 +3199,7 @@ namespace ArcademiaGameLauncher.Windows
         {
             _isQuarantineWarningVisible = false;
             Application.Current?.Dispatcher?.InvokeAsync(() =>
-                QuarantineWarning.Visibility = Visibility.Collapsed
+                QuarantineWarning.IsVisible = false
             );
         }
 
@@ -3476,14 +3436,14 @@ namespace ArcademiaGameLauncher.Windows
 
             // Show the up scroll arrow if there is a previous page and the down scroll arrow if there is a next page
             if (_pageIndex > 0)
-                ScrollArrow_Up.Visibility = Visibility.Visible;
+                ScrollArrow_Up.IsVisible = true;
             else
-                ScrollArrow_Up.Visibility = Visibility.Collapsed;
+                ScrollArrow_Up.IsVisible = false;
 
             if (_currentGameWorkingList.Length > (_pageIndex + 1) * _tilesPerPage)
-                ScrollArrow_Down.Visibility = Visibility.Visible;
+                ScrollArrow_Down.IsVisible = true;
             else
-                ScrollArrow_Down.Visibility = Visibility.Collapsed;
+                ScrollArrow_Down.IsVisible = false;
 
             // Capture state for background task
             var games = _currentGameWorkingList;
@@ -3561,7 +3521,7 @@ namespace ArcademiaGameLauncher.Windows
                                     minFontSize: 8,
                                     precision: 0.1
                                 );
-                            _gameTilesList[tileIndex].Visibility = Visibility.Visible;
+                            _gameTilesList[tileIndex].SetHidden(false);
 
                             // Set the image thumbnail
                             if (String.IsNullOrEmpty(update.ImageUri))
@@ -3731,13 +3691,13 @@ namespace ArcademiaGameLauncher.Windows
                                 if (j >= tags.Count)
                                 {
                                     // Hide any unused Game Tag elements
-                                    GameTagBorder[j].Visibility = Visibility.Hidden;
+                                    GameTagBorder[j].SetHidden(true);
                                     GameTag[j].Text = "";
                                     continue;
                                 }
 
                                 // Change Visibility
-                                GameTagBorder[j].Visibility = Visibility.Visible;
+                                GameTagBorder[j].SetHidden(false);
 
                                 // Change Text Content
                                 GameTag[j].Text = emojiParser.ReplaceColonNames(
@@ -3753,10 +3713,10 @@ namespace ArcademiaGameLauncher.Windows
 
                                 // Set the Border and Text Colour
                                 GameTag[j].Foreground = new SolidColorBrush(
-                                    (Color)ColorConverter.ConvertFromString(colour)
+                                    Color.Parse(colour)
                                 );
                                 GameTagBorder[j].BorderBrush = new SolidColorBrush(
-                                    (Color)ColorConverter.ConvertFromString(colour)
+                                    Color.Parse(colour)
                                 );
                             }
 
@@ -3812,15 +3772,18 @@ namespace ArcademiaGameLauncher.Windows
         private static readonly SolidColorBrush _fillActive = new(Color.FromRgb(0x21, 0x96, 0xF3));
         private static readonly SolidColorBrush _fillNeutral = new(Color.FromRgb(0x60, 0x7D, 0x8B));
 
-        private void SetStartButtonFill(double scaleX, Brush brush)
+        private void SetStartButtonFill(double scaleX, IBrush brush)
         {
             if (
-                StartButton.Template.FindName("PART_Fill", StartButton)
-                is not System.Windows.Shapes.Rectangle fill
+                StartButton
+                    .GetVisualDescendants()
+                    .OfType<Avalonia.Controls.Shapes.Rectangle>()
+                    .FirstOrDefault(r => r.Name == "PART_Fill")
+                is not Avalonia.Controls.Shapes.Rectangle fill
             )
                 return;
 
-            if (fill.RenderTransform is ScaleTransform scale && !scale.IsFrozen)
+            if (fill.RenderTransform is ScaleTransform scale)
                 scale.ScaleX = scaleX;
             else
                 fill.RenderTransform = new ScaleTransform(scaleX, 1.0);
@@ -3920,16 +3883,11 @@ namespace ArcademiaGameLauncher.Windows
         }
 
         // Reset Methods
-        private static readonly ScaleTransform s_collectionPlaceholderScale = CreateFrozenHalfScale();
+        private static readonly ITransform s_collectionPlaceholderScale = new ImmutableTransform(
+            Matrix.CreateScale(0.5, 0.5)
+        );
 
-        private static ScaleTransform CreateFrozenHalfScale()
-        {
-            var transform = new ScaleTransform(0.5, 0.5);
-            transform.Freeze();
-            return transform;
-        }
-
-        private static void SetImageSource(Image imageElement, ImageSource source, bool isCollectionPlaceholder)
+        private static void SetImageSource(Image imageElement, IImage source, bool isCollectionPlaceholder)
         {
             imageElement.Source = source;
             ApplyImagePresentation(imageElement, isCollectionPlaceholder);
@@ -3937,14 +3895,14 @@ namespace ArcademiaGameLauncher.Windows
 
         private static void ApplyImagePresentation(Image imageElement, bool isCollectionImage)
         {
-            RenderOptions.SetBitmapScalingMode(
+            RenderOptions.SetBitmapInterpolationMode(
                 imageElement,
-                isCollectionImage ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.Unspecified
+                isCollectionImage ? BitmapInterpolationMode.None : BitmapInterpolationMode.Unspecified
             );
-            imageElement.RenderTransformOrigin = new Point(0.5, 0.5);
+            imageElement.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
             imageElement.RenderTransform = isCollectionImage
                 ? s_collectionPlaceholderScale
-                : Transform.Identity;
+                : null;
         }
 
         private int _lastFolderStateSelectedIndex = int.MinValue;
@@ -4000,7 +3958,7 @@ namespace ArcademiaGameLauncher.Windows
             for (int i = 0; i < _tilesPerPage; i++)
             {
                 // Reset the visibility of all titles
-                _gameTilesList[i].Visibility = Visibility.Hidden;
+                _gameTilesList[i].SetHidden(true);
                 // Reset the text of all titles
                 _gameTitlesList[i].Content = "Loading...";
                 AnimationBehavior.SetSourceUri(_gameImagesList[i], null);
@@ -4041,15 +3999,15 @@ namespace ArcademiaGameLauncher.Windows
                 GameTag8.Text = "";
 
                 // Reset the Visibility of each Game Tag
-                GameTagBorder0.Visibility = Visibility.Hidden;
-                GameTagBorder1.Visibility = Visibility.Hidden;
-                GameTagBorder2.Visibility = Visibility.Hidden;
-                GameTagBorder3.Visibility = Visibility.Hidden;
-                GameTagBorder4.Visibility = Visibility.Hidden;
-                GameTagBorder5.Visibility = Visibility.Hidden;
-                GameTagBorder6.Visibility = Visibility.Hidden;
-                GameTagBorder7.Visibility = Visibility.Hidden;
-                GameTagBorder8.Visibility = Visibility.Hidden;
+                GameTagBorder0.SetHidden(true);
+                GameTagBorder1.SetHidden(true);
+                GameTagBorder2.SetHidden(true);
+                GameTagBorder3.SetHidden(true);
+                GameTagBorder4.SetHidden(true);
+                GameTagBorder5.SetHidden(true);
+                GameTagBorder6.SetHidden(true);
+                GameTagBorder7.SetHidden(true);
+                GameTagBorder8.SetHidden(true);
 
                 // Reset the Border and Text Colour of each Game Tag
                 GameTag0.Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x77, 0x77, 0x77));
@@ -4091,6 +4049,9 @@ namespace ArcademiaGameLauncher.Windows
                 );
             });
         }
+
+        private object FindResourceValue(string key) =>
+            this.TryFindResource(key, out var value) ? value : null;
 
         // Debounce Update Game Info Display
         private void DebounceUpdateGameInfoDisplay()

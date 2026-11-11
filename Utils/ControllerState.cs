@@ -7,7 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ArcademiaGameLauncher.Models;
 using Newtonsoft.Json.Linq;
-using SharpDX.DirectInput;
+using ArcademiaGameLauncher.Platform;
 
 namespace ArcademiaGameLauncher.Utils
 {
@@ -36,8 +36,7 @@ namespace ArcademiaGameLauncher.Utils
         readonly int joystickDeadzone = 7700;
         readonly int joystickMidpoint = 32511;
 
-        public Joystick joystick;
-        public JoystickState state;
+        public IGamepadDevice joystick;
 
         public Guid? DeviceGuid { get; private set; }
         public bool HasDevice => joystick != null;
@@ -196,7 +195,6 @@ namespace ArcademiaGameLauncher.Utils
             direction = new int[2];
 
             // Initialize the button states
-            state = new JoystickState();
             buttonStates = new bool[128];
             buttonDownStates = new bool[128];
             buttonUpStates = new bool[128];
@@ -226,24 +224,15 @@ namespace ArcademiaGameLauncher.Utils
             catch { }
         }
 
-        public void Attach(Joystick device, Guid deviceGuid)
+        public void Attach(IGamepadDevice device, Guid deviceGuid)
         {
             lock (_deviceLock)
             {
                 DetachDevice();
 
-                device.Properties.BufferSize = 128;
-                device.Acquire();
-
                 joystick = device;
                 DeviceGuid = deviceGuid;
                 _deviceLost = false;
-
-                try
-                {
-                    state = joystick.GetCurrentState();
-                }
-                catch { }
             }
         }
 
@@ -258,11 +247,6 @@ namespace ArcademiaGameLauncher.Utils
             if (joystick == null)
                 return;
 
-            try
-            {
-                joystick.Unacquire();
-            }
-            catch { }
             try
             {
                 joystick.Dispose();
@@ -351,15 +335,15 @@ namespace ArcademiaGameLauncher.Utils
         private void PollDevice()
         {
             // Poll the joystick for the current state
-            joystick.Poll();
-            state = joystick.GetCurrentState();
+            var buttons = new bool[buttonStates.Length];
+            joystick.Read(out int x, out int y, buttons);
 
             // Update the joystick states
-            SetLeftStickDirection(state.X, state.Y);
+            SetLeftStickDirection(x, y);
 
             // Update the button states
             for (int i = 0; i < buttonStates.Length; i++)
-                SetButtonState(i, state.Buttons[i]);
+                SetButtonState(i, buttons[i]);
         }
 
         private void UpdateExitButtonHeldFor()

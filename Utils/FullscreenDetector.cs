@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 
 namespace ArcademiaGameLauncher.Utils
@@ -25,6 +25,9 @@ namespace ArcademiaGameLauncher.Utils
 
         public static bool IsExclusiveFullscreen()
         {
+            if (!OperatingSystem.IsWindows())
+                return Platform.X11.IsFullscreen(Platform.X11.ActiveWindow());
+
             try
             {
                 return SHQueryUserNotificationState(out var state) == 0

@@ -3,6 +3,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.IO.Pipes;
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -14,7 +16,10 @@ using Microsoft.Extensions.Logging;
 
 namespace ArcademiaGameLauncher.Services
 {
-    public sealed record SdkSessionEnvironment(string PipeName, string Nonce, string SessionId);
+    public sealed record SdkSessionEnvironment(string PipeName, string Nonce, string SessionId)
+    {
+        public int? BridgePort { get; init; }
+    }
 
     public interface ISdkBrokerService
     {
@@ -81,6 +86,24 @@ namespace ArcademiaGameLauncher.Services
 
             for (var i = 0; i < MaxConnections; i++)
                 _ = Task.Run(() => RunAsync(environment, cts.Token));
+
+            if (!OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    var listener = new TcpListener(IPAddress.Loopback, 0);
+                    listener.Start();
+                    cts.Token.Register(listener.Stop);
+                    environment = environment with { BridgePort = ((IPEndPoint)listener.LocalEndpoint).Port };
+                    var bridged = environment;
+                    _ = Task.Run(() => RunBridgeAsync(listener, bridged, cts.Token));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[SDK] Could not open the bridge port for Wine games");
+                }
+            }
+
             _logger.LogInformation("[SDK] Broker listening for session {SessionId}", sessionId);
             return environment;
         }
@@ -130,22 +153,7 @@ namespace ArcademiaGameLauncher.Services
                     );
 
                     await server.WaitForConnectionAsync(ct);
-
-                    using var reader = new StreamReader(server, Encoding.UTF8, false, 4096, true);
-                    await using var writer = new StreamWriter(server, new UTF8Encoding(false), 4096, true)
-                    {
-                        AutoFlush = true,
-                    };
-
-                    while (server.IsConnected && !ct.IsCancellationRequested)
-                    {
-                        var line = await reader.ReadLineAsync(ct);
-                        if (line is null)
-                            break;
-
-                        var response = await HandleAsync(line, environment);
-                        await writer.WriteLineAsync(response.AsMemory(), ct);
-                    }
+                    await ServeAsync(server, () => server.IsConnected, environment, ct);
                 }
                 catch (OperationCanceledException)
                 {
@@ -163,6 +171,63 @@ namespace ArcademiaGameLauncher.Services
                         break;
                     }
                 }
+            }
+        }
+
+        private async Task RunBridgeAsync(TcpListener listener, SdkSessionEnvironment environment, CancellationToken ct)
+        {
+            _logger.LogInformation("[SDK] Bridge listening on 127.0.0.1:{Port}", environment.BridgePort);
+            while (!ct.IsCancellationRequested)
+            {
+                TcpClient client;
+                try
+                {
+                    client = await listener.AcceptTcpClientAsync(ct);
+                }
+                catch (Exception) when (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[SDK] Bridge accept error");
+                    continue;
+                }
+
+                _ = Task.Run(async () =>
+                {
+                    using (client)
+                    {
+                        try
+                        {
+                            await ServeAsync(client.GetStream(), () => client.Connected, environment, ct);
+                        }
+                        catch (OperationCanceledException) { }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "[SDK] Bridge connection error");
+                        }
+                    }
+                });
+            }
+        }
+
+        private async Task ServeAsync(Stream stream, Func<bool> connected, SdkSessionEnvironment environment, CancellationToken ct)
+        {
+            using var reader = new StreamReader(stream, Encoding.UTF8, false, 4096, true);
+            await using var writer = new StreamWriter(stream, new UTF8Encoding(false), 4096, true)
+            {
+                AutoFlush = true,
+            };
+
+            while (connected() && !ct.IsCancellationRequested)
+            {
+                var line = await reader.ReadLineAsync(ct);
+                if (line is null)
+                    break;
+
+                var response = await HandleAsync(line, environment);
+                await writer.WriteLineAsync(response.AsMemory(), ct);
             }
         }
 
