@@ -54,8 +54,8 @@ namespace ArcademiaGameLauncher.Services
 
         public static bool IsInstalled(
             string gameDirectoryPath,
-            string? folderName,
-            string? executableName
+            string folderName,
+            string executableName
         ) =>
             !string.IsNullOrEmpty(folderName)
             && !string.IsNullOrEmpty(executableName)

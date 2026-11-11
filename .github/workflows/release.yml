@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches: [Live]
+    paths: ["Arcademia-Launcher.csproj"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -13,14 +15,15 @@ env:
 
 jobs:
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.read.outputs.version }}
       number: ${{ steps.read.outputs.number }}
+      release: ${{ steps.check.outputs.release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
@@ -37,7 +40,33 @@ jobs:
             exit 1
           fi
 
+      - name: Check the version is new
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version="${{ steps.read.outputs.version }}"
+          if [[ "$GITHUB_REF_TYPE" == "tag" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "::notice::v$version already has a release, nothing to do"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          newest=$(gh release list --limit 200 --json tagName --jq '.[].tagName' | sed 's/^v//' | sort -V | tail -n 1)
+          if [[ -n "$newest" && "$(printf '%s\n%s\n' "$newest" "$version" | sort -V | tail -n 1)" != "$version" ]]; then
+            echo "::notice::v$version is not newer than the latest release v$newest, skipping"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "New version v$version (latest release: ${newest:-none})"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
       - name: Create draft release
+        if: steps.check.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -56,6 +85,7 @@ jobs:
 
   build:
     needs: version
+    if: needs.version.outputs.release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -63,14 +93,14 @@ jobs:
           - os: windows-latest
             rid: win-x64
             self-contained: "false"
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             rid: linux-x64
             self-contained: "true"
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 

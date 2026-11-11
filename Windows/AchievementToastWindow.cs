@@ -16,7 +16,7 @@ namespace ArcademiaGameLauncher.Windows
     {
         private const double ToastWidth = 400;
         private const double ToastHeight = 96;
-        private const double Margin = 24;
+        private const double EdgeMargin = 24;
         private const double Gap = 10;
         private const double Lifetime = 5.0;
         private const double EnterDuration = 0.4;
@@ -27,8 +27,8 @@ namespace ArcademiaGameLauncher.Windows
         private const double GlintWidth = 70;
         private const double LogoHeight = 150;
         private const int MaxVisible = 3;
-        private const double RegionWidth = ToastWidth + Margin * 2;
-        private const double RegionHeight = Margin + MaxVisible * (ToastHeight + Gap) + 20;
+        private const double RegionWidth = ToastWidth + EdgeMargin * 2;
+        private const double RegionHeight = EdgeMargin + MaxVisible * (ToastHeight + Gap) + 20;
 
         private sealed class Toast
         {
@@ -122,7 +122,7 @@ namespace ArcademiaGameLauncher.Windows
             );
         }
 
-        private static double SlotY(int slot) => Margin + slot * (ToastHeight + Gap);
+        private static double SlotY(int slot) => EdgeMargin + slot * (ToastHeight + Gap);
 
         private static double EaseOut(double t) => 1 - Math.Pow(1 - Math.Clamp(t, 0, 1), 3);
 
@@ -136,7 +136,7 @@ namespace ArcademiaGameLauncher.Windows
 
         private static void Place(Toast toast, double x, double bottomY)
         {
-            Canvas.SetLeft(toast.Root, RegionWidth - Margin - ToastWidth + x);
+            Canvas.SetLeft(toast.Root, RegionWidth - EdgeMargin - ToastWidth + x);
             Canvas.SetTop(toast.Root, RegionHeight - bottomY - ToastHeight);
         }
 
@@ -154,7 +154,7 @@ namespace ArcademiaGameLauncher.Windows
                 {
                     var t = (now - toast.ExitStart) / ExitDuration;
                     var eased = EaseIn(t);
-                    Place(toast, (ToastWidth + Margin * 2) * eased, toast.ToY);
+                    Place(toast, (ToastWidth + EdgeMargin * 2) * eased, toast.ToY);
                     toast.Root.Opacity = 1 - eased * 0.4;
                     if (t >= 1)
                     {
@@ -231,7 +231,7 @@ namespace ArcademiaGameLauncher.Windows
             var topHalf = _visible.Count == 0 || !_visible[0].TopHalf;
             var created = Build(data, topHalf);
             created.TopHalf = topHalf;
-            created.FromY = -ToastHeight - Margin;
+            created.FromY = -ToastHeight - EdgeMargin;
             created.ToY = SlotY(0);
             created.MoveStart = now;
             created.MoveDuration = EnterDuration;

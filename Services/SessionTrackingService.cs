@@ -15,7 +15,7 @@ namespace ArcademiaGameLauncher.Services
             Func<string, int, string, Task> invokeStart,
             Func<string, string, string, Task> invokeEnd
         );
-        string? CurrentExternalId { get; }
+        string CurrentExternalId { get; }
         event Action SessionEnded;
         event Action<string, string> SessionEndedWithReason;
         Task StartSessionAsync(
@@ -53,15 +53,15 @@ namespace ArcademiaGameLauncher.Services
         private static readonly TimeSpan SessionStartWait = TimeSpan.FromSeconds(15);
         private static readonly TimeSpan ScoreSendTimeout = TimeSpan.FromSeconds(10);
 
-        private string? _currentExternalId;
-        private TaskCompletionSource<bool>? _startCompletion;
+        private string _currentExternalId;
+        private TaskCompletionSource<bool> _startCompletion;
 
-        public string? CurrentExternalId => _currentExternalId;
+        public string CurrentExternalId => _currentExternalId;
 
         public event Action SessionEnded;
         public event Action<string, string> SessionEndedWithReason;
-        private Func<string, int, string, Task>? _invokeStart;
-        private Func<string, string, string, Task>? _invokeEnd;
+        private Func<string, int, string, Task> _invokeStart;
+        private Func<string, string, string, Task> _invokeEnd;
 
         public SessionTrackingService(
             string applicationPath,

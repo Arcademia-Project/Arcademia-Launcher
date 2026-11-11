@@ -6,7 +6,7 @@
     <RootNamespace>ArcademiaGameLauncher</RootNamespace>
     <AssemblyName>Arcademia-Launcher</AssemblyName>
     <LegacyExeName>Research-Arcade-Launcher</LegacyExeName>
-    <Version>2.11.0-26</Version>
+    <Version>2.11.1-26</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>Assets\Images\Arcademia_Favicon.ico</ApplicationIcon>

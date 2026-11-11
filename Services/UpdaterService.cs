@@ -64,7 +64,7 @@ namespace ArcademiaGameLauncher.Services
         public string VersionNumber { get; } = game.VersionNumber;
         public string Name { get; } = game.Name;
         public string Description { get; } = game.Description;
-        public string? ThumbnailUrl { get; } = game.ThumbnailUrl;
+        public string ThumbnailUrl { get; } = game.ThumbnailUrl;
         public string[] Authors { get; } =
             game.Authors?.Select(author => author.Name).ToArray() ?? [];
         public Tag[] Tags { get; } = game.Tags?.ToArray() ?? [];

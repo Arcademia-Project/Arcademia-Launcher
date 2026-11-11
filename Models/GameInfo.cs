@@ -10,7 +10,7 @@ namespace ArcademiaGameLauncher.Models
 
         public string Name { get; set; } = null!;
         public string Description { get; set; } = null!;
-        public string? ThumbnailUrl { get; set; }
+        public string ThumbnailUrl { get; set; }
 
         public ICollection<Author> Authors { get; set; } = [];
         public ICollection<Tag> Tags { get; set; } = [];
