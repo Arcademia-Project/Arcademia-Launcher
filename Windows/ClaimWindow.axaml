@@ -1,27 +1,22 @@
 <Window x:Class="ArcademiaGameLauncher.Windows.ClaimWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:utils="clr-namespace:ArcademiaGameLauncher.Utils"
         xmlns:local="clr-namespace:ArcademiaGameLauncher"
-        mc:Ignorable="d"
         WindowStartupLocation="CenterScreen"
         WindowState="Normal"
-        ResizeMode="NoResize"
+        CanResize="False"
         Title="ClaimWindow"
         Height="600"
         Width="1000"
-        WindowStyle="None"
-        AllowsTransparency="True"
+        WindowDecorations="None"
+        TransparencyLevelHint="Transparent"
         Background="Transparent"
         ShowInTaskbar="False"
         Topmost="True">
 
         <Window.Resources>
-                <Style x:Key="Early GameBoy">
-                        <Setter Property="TextElement.FontFamily"
-                                Value="/Fonts/#Press Start 2P"/>
-                </Style>
+                <FontFamily x:Key="EarlyGameBoy">avares://Arcademia-Launcher/Fonts#Press Start 2P</FontFamily>
         </Window.Resources>
 
         <Grid Background="Black"
@@ -37,7 +32,7 @@
                 <TextBlock x:Name="TitleText"
                            Grid.Row="0"
                            Text="Scan To Save Your Score"
-                           Style="{StaticResource Early GameBoy}"
+                           FontFamily="{StaticResource EarlyGameBoy}"
                            FontSize="26"
                            Foreground="White"
                            VerticalAlignment="Center"
@@ -52,12 +47,12 @@
                         <Image x:Name="QrImage"
                                Width="240"
                                Height="240"
-                               RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                               RenderOptions.BitmapInterpolationMode="None"/>
                 </Border>
 
                 <TextBlock Grid.Row="2"
                            Text="Press EXIT To Cancel"
-                           Style="{StaticResource Early GameBoy}"
+                           FontFamily="{StaticResource EarlyGameBoy}"
                            FontSize="22"
                            Foreground="White"
                            VerticalAlignment="Center"
@@ -66,7 +61,7 @@
                 <TextBlock x:Name="CountdownText"
                            Grid.Row="3"
                            Text="5:00"
-                           Style="{StaticResource Early GameBoy}"
+                           FontFamily="{StaticResource EarlyGameBoy}"
                            FontSize="40"
                            Foreground="Red"
                            VerticalAlignment="Center"

@@ -1,25 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using ArcademiaGameLauncher.Models;
+using ArcademiaGameLauncher.Platform;
 using ArcademiaGameLauncher.Windows;
 using Microsoft.Extensions.Logging;
-using SharpDX.DirectInput;
 
 namespace ArcademiaGameLauncher.Utils
 {
     class ControllerManager
     {
-        [DllImport(
-            "user32.dll",
-            CharSet = CharSet.Auto,
-            ExactSpelling = true,
-            CallingConvention = CallingConvention.Winapi
-        )]
-        public static extern short GetAsyncKeyState(int keyCode);
-
         private const int MinimumSlots = 2;
         private const int DeviceScanIntervalMs = 2000;
 
@@ -33,7 +24,7 @@ namespace ArcademiaGameLauncher.Utils
         private bool _debugMode;
         private bool _debugModeRunning = false;
 
-        private DirectInput _directInput;
+        private IGamepadBackend _gamepads;
         private readonly object _slotsLock = new();
         private readonly Dictionary<Guid, int> _slotByDevice = [];
         private readonly CancellationTokenSource _deviceWatcherCts = new();
@@ -54,7 +45,7 @@ namespace ArcademiaGameLauncher.Utils
             _isKeymapping = true;
             _debugMode = false;
 
-            _directInput = new();
+            _gamepads = Gamepads.CreateBackend();
 
             for (int i = 0; i < MinimumSlots; i++)
                 AddSlot();
@@ -73,7 +64,7 @@ namespace ArcademiaGameLauncher.Utils
                 controllerState.StopPolling();
                 controllerState.Detach();
             }
-            _directInput.Dispose();
+            _gamepads.Dispose();
         }
 
         private ControllerState AddSlot()
@@ -93,30 +84,8 @@ namespace ArcademiaGameLauncher.Utils
             return controllerState;
         }
 
-        private List<Guid> FindConnectedDevices()
-        {
-            List<Guid> deviceGuids = [];
-
-            // Prefer Gamepads, fall back to Joysticks
-            foreach (
-                var deviceInstance in _directInput.GetDevices(
-                    DeviceType.Gamepad,
-                    DeviceEnumerationFlags.AttachedOnly
-                )
-            )
-                deviceGuids.Add(deviceInstance.InstanceGuid);
-
-            if (deviceGuids.Count == 0)
-                foreach (
-                    var deviceInstance in _directInput.GetDevices(
-                        DeviceType.Joystick,
-                        DeviceEnumerationFlags.AttachedOnly
-                    )
-                )
-                    deviceGuids.Add(deviceInstance.InstanceGuid);
-
-            return deviceGuids;
-        }
+        // Prefer Gamepads, fall back to Joysticks
+        private List<Guid> FindConnectedDevices() => _gamepads.FindConnectedDevices();
 
         private void SyncDevices()
         {
@@ -156,7 +125,7 @@ namespace ArcademiaGameLauncher.Utils
                     var slot = FindSlotFor(guid);
                     try
                     {
-                        slot.Attach(new Joystick(_directInput, guid), guid);
+                        slot.Attach(_gamepads.Open(guid), guid);
                         _slotByDevice[guid] = slot.GetIndex();
                         _logger.LogInformation(
                             "[ControllerManager] Controller connected as player {Player}",
@@ -340,7 +309,7 @@ namespace ArcademiaGameLauncher.Utils
             try
             {
                 // send numlock key press
-                if (((ushort)GetAsyncKeyState(0x90) & 0xffff) != 0)
+                if (KeyState.IsNumLockOn())
                 {
                     keyboard.Send(Keyboard.ScanCodeShort.NUMLOCK);
                     keyboard.Release(Keyboard.ScanCodeShort.NUMLOCK);
@@ -373,8 +342,7 @@ namespace ArcademiaGameLauncher.Utils
             {
                 while (true)
                 {
-                    bool _debugKeyState =
-                        (GetAsyncKeyState((int)Keyboard.VirtualKeyShort.F4) & 0x8000) != 0;
+                    bool _debugKeyState = KeyState.IsDown((int)Keyboard.VirtualKeyShort.F4);
 
                     if (!_debugKeyState && _debugKeyDown)
                         ToggleDebugMode();
@@ -413,19 +381,19 @@ namespace ArcademiaGameLauncher.Utils
                         int dirY = 0;
 
                         // Up
-                        if (((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.Up)) & 0x8000) != 0)
+                        if (KeyState.IsDown(GetVirtualKey(keybinds.Up)))
                             dirY = -1;
 
                         // Down
-                        if (((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.Down)) & 0x8000) != 0)
+                        if (KeyState.IsDown(GetVirtualKey(keybinds.Down)))
                             dirY = 1;
 
                         // Left
-                        if (((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.Left)) & 0x8000) != 0)
+                        if (KeyState.IsDown(GetVirtualKey(keybinds.Left)))
                             dirX = -1;
 
                         // Right
-                        if (((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.Right)) & 0x8000) != 0)
+                        if (KeyState.IsDown(GetVirtualKey(keybinds.Right)))
                             dirX = 1;
 
                         controllerState.SetDebugStickState(dirX, dirY);
@@ -435,49 +403,49 @@ namespace ArcademiaGameLauncher.Utils
                         // Exit
                         controllerState.SetDebugAction(
                             ControllerState.ControllerActions.Exit,
-                            ((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.Exit)) & 0x8000) != 0
+                            KeyState.IsDown(GetVirtualKey(keybinds.Exit))
                         );
 
                         // Start
                         controllerState.SetDebugAction(
                             ControllerState.ControllerActions.Start,
-                            ((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.Start)) & 0x8000) != 0
+                            KeyState.IsDown(GetVirtualKey(keybinds.Start))
                         );
 
                         // A
                         controllerState.SetDebugAction(
                             ControllerState.ControllerActions.A,
-                            ((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.A)) & 0x8000) != 0
+                            KeyState.IsDown(GetVirtualKey(keybinds.A))
                         );
 
                         // B
                         controllerState.SetDebugAction(
                             ControllerState.ControllerActions.B,
-                            ((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.B)) & 0x8000) != 0
+                            KeyState.IsDown(GetVirtualKey(keybinds.B))
                         );
 
                         // C
                         controllerState.SetDebugAction(
                             ControllerState.ControllerActions.C,
-                            ((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.C)) & 0x8000) != 0
+                            KeyState.IsDown(GetVirtualKey(keybinds.C))
                         );
 
                         // D
                         controllerState.SetDebugAction(
                             ControllerState.ControllerActions.D,
-                            ((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.D)) & 0x8000) != 0
+                            KeyState.IsDown(GetVirtualKey(keybinds.D))
                         );
 
                         // E
                         controllerState.SetDebugAction(
                             ControllerState.ControllerActions.E,
-                            ((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.E)) & 0x8000) != 0
+                            KeyState.IsDown(GetVirtualKey(keybinds.E))
                         );
 
                         // F
                         controllerState.SetDebugAction(
                             ControllerState.ControllerActions.F,
-                            ((ushort)GetAsyncKeyState(GetVirtualKey(keybinds.F)) & 0x8000) != 0
+                            KeyState.IsDown(GetVirtualKey(keybinds.F))
                         );
                     }
 

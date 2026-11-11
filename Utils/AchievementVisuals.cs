@@ -1,12 +1,12 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using SkiaSharp;
 
 namespace ArcademiaGameLauncher.Utils
 {
@@ -14,32 +14,28 @@ namespace ArcademiaGameLauncher.Utils
     {
         public static readonly string AssemblyName = typeof(AchievementVisuals).Assembly.GetName().Name;
 
-        public static Uri Pack(string path) =>
-            new($"pack://application:,,,/{AssemblyName};component/{path}", UriKind.Absolute);
+        public static Uri Pack(string path) => new($"avares://{AssemblyName}/{path}", UriKind.Absolute);
 
-        private static readonly FontFamily BundledFont = new(Pack("Fonts/"), "./#Press Start 2P");
+        public static readonly FontFamily BundledFont = new($"avares://{AssemblyName}/Fonts#Press Start 2P");
 
-        public static readonly bool UseSystemFont = !IsRunningUnderWine() && IsSystemFontInstalled("segoeui.ttf");
+        public static readonly FontFamily Font = BundledFont;
 
-        public static readonly FontFamily Font = UseSystemFont ? new("Segoe UI") : BundledFont;
-
-        private static readonly Lazy<IDictionary<int, ushort>> BundledGlyphs = new(() =>
-            new Typeface(BundledFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal)
-                .TryGetGlyphTypeface(out var glyphTypeface)
-                ? glyphTypeface.CharacterToGlyphMap
+        private static readonly Lazy<GlyphTypeface> BundledGlyphs = new(() =>
+            FontManager.Current.TryGetGlyphTypeface(new Typeface(BundledFont), out var glyphTypeface)
+                ? glyphTypeface
                 : null
         );
 
         public static string SafeText(string text)
         {
-            if (UseSystemFont || string.IsNullOrEmpty(text))
+            if (string.IsNullOrEmpty(text))
                 return text ?? "";
 
             var glyphs = BundledGlyphs.Value;
             var builder = new StringBuilder(text.Length);
             foreach (var rune in text.EnumerateRunes())
             {
-                if (rune.Value is '\n' or '\r' or '\t' || glyphs == null || glyphs.ContainsKey(rune.Value))
+                if (rune.Value is '\n' or '\r' or '\t' || glyphs == null || glyphs.CharacterToGlyphMap.ContainsGlyph(rune.Value))
                     builder.Append(rune.ToString());
                 else if (!Rune.IsControl(rune) && rune.Value is not (0x200D or 0xFE0F))
                     builder.Append('?');
@@ -47,51 +43,20 @@ namespace ArcademiaGameLauncher.Utils
             return builder.ToString();
         }
 
-        private static bool IsSystemFontInstalled(string fileName)
-        {
-            try
-            {
-                return File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), fileName));
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr GetModuleHandle(string moduleName);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Ansi)]
-        private static extern IntPtr GetProcAddress(IntPtr module, string procName);
-
-        private static bool IsRunningUnderWine()
-        {
-            try
-            {
-                var ntdll = GetModuleHandle("ntdll.dll");
-                return ntdll != IntPtr.Zero && GetProcAddress(ntdll, "wine_get_version") != IntPtr.Zero;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        private static BitmapSource _logoTop;
-        private static BitmapSource _logoBottom;
-        private static readonly ConcurrentDictionary<string, BitmapSource> Icons = new();
-        private static readonly ConcurrentDictionary<string, BitmapSource> GreyIcons = new();
+        private static Bitmap _logoTop;
+        private static Bitmap _logoBottom;
+        private static readonly ConcurrentDictionary<string, Bitmap> Icons = new();
+        private static readonly ConcurrentDictionary<string, Bitmap> GreyIcons = new();
 
         public static Color Color(int rgb, double alpha = 1) =>
-            System.Windows.Media.Color.FromArgb(
+            Avalonia.Media.Color.FromArgb(
                 (byte)Math.Round(alpha * 255),
                 (byte)((rgb >> 16) & 0xFF),
                 (byte)((rgb >> 8) & 0xFF),
                 (byte)(rgb & 0xFF)
             );
 
-        public static BitmapSource LogoHalf(bool top)
+        public static Bitmap LogoHalf(bool top)
         {
             try
             {
@@ -105,7 +70,7 @@ namespace ArcademiaGameLauncher.Utils
             }
         }
 
-        public static BitmapSource Icon(string path)
+        public static Bitmap Icon(string path)
         {
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 return null;
@@ -113,7 +78,7 @@ namespace ArcademiaGameLauncher.Utils
             {
                 try
                 {
-                    return LoadFile(p);
+                    return new Bitmap(new MemoryStream(File.ReadAllBytes(p)));
                 }
                 catch (Exception)
                 {
@@ -122,41 +87,25 @@ namespace ArcademiaGameLauncher.Utils
             });
         }
 
-        public static BitmapSource GreyIcon(string path)
+        public static Bitmap GreyIcon(string path)
         {
             var icon = Icon(path);
-            return icon is null ? null : GreyIcons.GetOrAdd(path, _ => Greyscale(icon));
+            return icon is null ? null : GreyIcons.GetOrAdd(path, p => Greyscale(File.ReadAllBytes(p)));
         }
 
-        private static BitmapSource Load(Uri uri)
+        private static byte[] Load(Uri uri)
         {
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.UriSource = uri;
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.EndInit();
-            image.Freeze();
-            return image;
+            using var stream = AssetLoader.Open(uri);
+            using var buffer = new MemoryStream();
+            stream.CopyTo(buffer);
+            return buffer.ToArray();
         }
 
-        private static BitmapSource LoadFile(string path)
+        public static Bitmap Greyscale(byte[] encoded)
         {
-            using var stream = new MemoryStream(File.ReadAllBytes(path));
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.StreamSource = stream;
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.EndInit();
-            image.Freeze();
-            return image;
-        }
-
-        public static BitmapSource Greyscale(BitmapSource source)
-        {
-            var converted = new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
-            var stride = converted.PixelWidth * 4;
-            var pixels = new byte[stride * converted.PixelHeight];
-            converted.CopyPixels(pixels, stride, 0);
+            using var decoded = SKBitmap.Decode(encoded);
+            using var converted = decoded.Copy(SKColorType.Bgra8888);
+            var pixels = converted.Bytes;
 
             for (var i = 0; i < pixels.Length; i += 4)
             {
@@ -170,18 +119,11 @@ namespace ArcademiaGameLauncher.Utils
                 pixels[i + 2] = luminance;
             }
 
-            var result = BitmapSource.Create(
-                converted.PixelWidth,
-                converted.PixelHeight,
-                96,
-                96,
-                PixelFormats.Bgra32,
-                null,
-                pixels,
-                stride
-            );
-            result.Freeze();
-            return result;
+            using var output = new SKBitmap(converted.Info);
+            System.Runtime.InteropServices.Marshal.Copy(pixels, 0, output.GetPixels(), pixels.Length);
+            using var image = SKImage.FromBitmap(output);
+            using var png = image.Encode(SKEncodedImageFormat.Png, 100);
+            return new Bitmap(png.AsStream());
         }
     }
 }

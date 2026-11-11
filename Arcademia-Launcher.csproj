@@ -1,46 +1,41 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows7.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputType>WinExe</OutputType>
     <RootNamespace>ArcademiaGameLauncher</RootNamespace>
     <AssemblyName>Arcademia-Launcher</AssemblyName>
     <LegacyExeName>Research-Arcade-Launcher</LegacyExeName>
-    <UseWPF>true</UseWPF>
-    <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
+    <Version>2.11.0-26</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>Assets\Images\Arcademia_Favicon.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
   <ItemGroup>
-    <None Remove="Assets\Images\Arcademia_Favicon.ico" />
-    <None Remove="Assets\json\ButtonConfig.json" />
-    <None Remove="Assets\json\Credits.json" />
-    <None Remove="Assets\json\emojis.json" />
+    <Compile Remove="packages/**;state/**" />
+    <None Remove="packages/**;state/**" />
+    <AvaloniaResource Include="Fonts\**" />
+    <AvaloniaResource Include="Assets\Images\**" />
+    <EmbeddedResource Include="Assets\Sounds\**" />
+    <EmbeddedResource Include="Assets\json\ButtonConfig.json" />
+    <EmbeddedResource Include="Assets\json\Credits.json" />
+    <EmbeddedResource Include="Assets\json\emojis.json" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Assets\Images\Arcademia_Favicon.ico" />
-  </ItemGroup>
-  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Themes.Simple" Version="12.1.5" />
     <PackageReference Include="QRCoder" Version="1.8.1" />
-    <Resource Include="Assets\Images\Arcademia_Favicon.ico">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Fonts\Early GameBoy.ttf" />
-    <Resource Include="Fonts\Press Start 2P.ttf" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.13" />
-    <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.13" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.13" />
-    <PackageReference Include="NAudio" Version="3.1.0" />
-    <PackageReference Include="NAudio.Asio" Version="3.1.0" />
     <PackageReference Include="NAudio.Core" Version="3.1.0" />
-    <PackageReference Include="NAudio.Midi" Version="3.1.0" />
     <PackageReference Include="NAudio.Vorbis" Version="3.0.0" />
-    <PackageReference Include="NAudio.Wasapi" Version="3.1.0" />
-    <PackageReference Include="NAudio.WinForms" Version="3.1.0" />
-    <PackageReference Include="NAudio.WinMM" Version="3.1.0" />
+    <PackageReference Include="NLayer.NAudioSupport" Version="3.0.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Serilog" Version="4.4.0" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
@@ -54,57 +49,16 @@
     <PackageReference Include="SocketIO.Serializer.SystemTextJson" Version="3.1.2" />
     <PackageReference Include="SocketIOClient" Version="4.0.5" />
     <PackageReference Include="SocketIOClient.Newtonsoft.Json" Version="3.0.7" />
-    <PackageReference Include="System.Data.DataSetExtensions" Version="4.5.0" />
-    <PackageReference Include="System.Net.Http" Version="4.3.4" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
-    <PackageReference Include="System.Security.AccessControl" Version="6.0.1" />
-    <PackageReference Include="System.Text.Encodings.Web" Version="10.0.13" />
-    <PackageReference Include="System.Text.Json" Version="10.0.13" />
-    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
-    <PackageReference Include="XamlAnimatedGif" Version="2.3.2" />
+    <PackageReference Include="Ultz.Native.SDL" Version="2.32.10" />
   </ItemGroup>
-  <ItemGroup>
-    <Resource Include="Assets\Images\Arcademia_Logo.png">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Assets\Images\creditEnemy.gif">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Assets\Images\css.png">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Assets\Images\intlab.png">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Assets\Images\StartMenu_Background.gif">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Assets\Images\ThumbnailPlaceholder.png">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Assets\Images\CollectionPlaceholder_Closed.png">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Assets\Images\CollectionPlaceholder_Open.png">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Assets\Images\uolwhite.png">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Assets\Images\Scroll-Arrow.gif">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Assets\Images\ToastLogoTop.png" />
-    <Resource Include="Assets\Images\ToastLogoBottom.png" />
-    <EmbeddedResource Include="Assets\Sounds\**" />
-    <EmbeddedResource Include="Assets\json\ButtonConfig.json" />
-    <EmbeddedResource Include="Assets\json\Credits.json" />
-    <EmbeddedResource Include="Assets\json\emojis.json" />
-  </ItemGroup>
-  <Target Name="CopyLegacyExeAfterBuild" AfterTargets="Build">
+  <Target Name="BuildWineBridge" AfterTargets="Publish" Condition="$(RuntimeIdentifier.StartsWith('linux'))">
+    <MakeDir Directories="$(PublishDir)WineBridge" />
+    <Exec Command="x86_64-w64-mingw32-gcc -O2 -s -municode -static -o &quot;$(PublishDir)WineBridge/Arcademia-WineBridge.exe&quot; &quot;$(MSBuildProjectDirectory)/WineBridge/Arcademia-WineBridge.c&quot; -lws2_32" />
+  </Target>
+  <Target Name="CopyLegacyExeAfterBuild" AfterTargets="Build" Condition="Exists('$(OutDir)$(AssemblyName).exe')">
     <Copy SourceFiles="$(OutDir)$(AssemblyName).exe" DestinationFiles="$(OutDir)$(LegacyExeName).exe" SkipUnchangedFiles="true" />
   </Target>
-  <Target Name="CopyLegacyExeAfterPublish" AfterTargets="Publish">
+  <Target Name="CopyLegacyExeAfterPublish" AfterTargets="Publish" Condition="Exists('$(PublishDir)$(AssemblyName).exe')">
     <Copy SourceFiles="$(PublishDir)$(AssemblyName).exe" DestinationFiles="$(PublishDir)$(LegacyExeName).exe" SkipUnchangedFiles="true" />
   </Target>
 </Project>
